@@ -28,6 +28,8 @@ tower = { version = "0.5", features = ["util"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章是 low-level 章，新增两个 hyper 相关依赖：`hyper`（HTTP 协议实现，`axum::serve` 内部就基于它）+ `hyper-util`（hyper 的工具集，启用 `server` 用 `auto::Builder` 服务连接、`tokio` 用 `TokioIo`/`TokioExecutor` 适配）。`tower` 的 `util` feature 提供 `ServiceExt::oneshot`。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

@@ -33,6 +33,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章和 ch53/54 骨架相同，只换 TLS backend：用 `openssl`（直接绑 OpenSSL C 库，API 最全）+ `tokio-openssl`（异步包装，注意握手要 `Pin`）。`hyper`/`hyper-util`/`tower` 同 ch53，见那章的依赖说明。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

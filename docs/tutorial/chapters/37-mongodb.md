@@ -31,6 +31,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章相比前面章节新增 `mongodb`（官方 MongoDB 客户端，启用 `tokio-comp` feature 走 tokio runtime）。和前面 PostgreSQL 章节（ch32-35）区别：MongoDB 是文档型 NoSQL，无表结构、无 migration、查询用 `doc!` 宏而非 SQL。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

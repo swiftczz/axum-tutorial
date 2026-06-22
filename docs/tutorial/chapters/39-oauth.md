@@ -33,6 +33,12 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章依赖比较多，按职责分组：
+
+- **OAuth 核心**：`oauth2`（OAuth 2.0 客户端，处理授权 URL 生成、code 换 token）+ `reqwest`（HTTP 客户端，调 Discord API 拉用户信息）
+- **Session**：`async-session`（session 存储抽象 + 内存实现 `MemoryStore`，存登录态）
+- **错误处理**：`anyhow`（动态错误聚合，第 20 章详解）+ `axum-extra` 的 `typed-header`（类型安全提取 Cookie 头）
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

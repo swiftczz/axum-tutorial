@@ -30,6 +30,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章相比前面章节新增三个 Diesel 相关依赖：`diesel`（同步 ORM，启用 `postgres` feature）+ `deadpool-diesel`（把同步 Diesel 接入 async 的连接池，提供 `conn.interact(...)` 把同步查询扔进阻塞线程池）+ `diesel_migrations`（编译期嵌入 SQL migration）。对比第 35 章的 `diesel-async`（异步 Diesel，直接 `.await` 不需 `interact`）。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

@@ -28,6 +28,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章组合第 45 章 graceful shutdown + 第 46 章 TLS，依赖和 ch46 几乎一样（`axum-server` 启用 `tls-rustls`）。`axum-extra` 用于 HTTP 重定向服务的 `HandlerWithoutStateExt`。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

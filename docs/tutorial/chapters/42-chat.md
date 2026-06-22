@@ -23,6 +23,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章相比前面章节新增 `futures-util`（启用 `sink` feature 提供 `SinkExt::send` 发送 WebSocket 消息）。第 41 章用 `socket.send()`，本章用 `Sink` trait——因为聊天室要广播给多个连接，需要统一的 trait 抽象。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

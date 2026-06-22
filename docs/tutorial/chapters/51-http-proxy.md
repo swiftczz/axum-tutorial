@@ -27,6 +27,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章是 HTTP 代理，新增 `hyper` + `hyper-util`（用 hyper client 转发请求到下游）+ `tower` 启用 `make`（`MakeService` trait，把单个 service 转成可不断生产 service 的工厂）和 `util`（`ServiceExt` 等扩展）。对比第 52 章 reverse-proxy（更简单的代理）和第 15 章 reqwest 转发（高层 API）。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

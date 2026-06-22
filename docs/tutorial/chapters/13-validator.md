@@ -27,6 +27,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 validator = { version = "0.20", features = ["derive"] }
 ````
 
+本章相比前面章节新增两个依赖：`validator`（输入验证库，提供 `#[validate(length(min = 2))]` 等属性规则）和 `thiserror`（错误枚举派生库，第 11 章已用过）。`validator` 通过 `derive` feature 启用派生宏。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

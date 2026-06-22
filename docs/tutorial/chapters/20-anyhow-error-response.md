@@ -23,6 +23,8 @@ axum = "0.8"
 tokio = { version = "1.0", features = ["full"] }
 ````
 
+本章相比前面章节只新增 `anyhow`（动态错误聚合库，能装任何 `std::error::Error`，让 `?` 自动转换多种错误类型）。和第 19 章的 `thiserror`（静态错误枚举）是两种风格——anyhow 适合应用层，thiserror 适合库。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

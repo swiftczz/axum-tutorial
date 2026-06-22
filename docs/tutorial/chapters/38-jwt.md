@@ -26,6 +26,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章相比前面章节新增：`jsonwebtoken`（JWT 签发和验证，第 38 章第一次出现）和 `axum-extra` 的 `typed-header` feature（类型安全地提取 `Authorization` 请求头，比手写 `headers.get("authorization")` 安全）。`axum-extra` 是 axum 官方的扩展 crate，提供 `TypedHeader`、`WithRejection`（ch11 用过）等额外 extractor。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

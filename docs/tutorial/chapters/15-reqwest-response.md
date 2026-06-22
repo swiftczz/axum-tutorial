@@ -27,6 +27,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章相比前面章节新增两个依赖：`reqwest`（HTTP 客户端库，调下游接口）和 `tokio-stream`（stream 工具，提供 `StreamExt::throttle` 等方法）。`reqwest` 用 `rustls-tls` feature 走 rustls（不用 OpenSSL，编译简单）。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

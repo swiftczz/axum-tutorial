@@ -23,6 +23,8 @@ tokio = { version = "1.0", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors"] }
 ````
 
+本章相比前面章节新增 `tower-http` 的 `cors` feature（启用 `CorsLayer`，配置跨域响应头）。`tower-http` 是 axum 生态的 HTTP middleware 工具集，前面章节用过它的 `trace`/`fs`/`timeout` feature，这章第一次用 `cors`。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

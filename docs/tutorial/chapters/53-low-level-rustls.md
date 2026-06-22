@@ -45,6 +45,12 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章是 low-level 章，依赖比 high-level TLS 章（ch46 用 `axum-server` 一行搞定）多几样：
+
+- `hyper` + `hyper-util`：手动服务 HTTP 连接（ch49 详解这两个的关系）
+- `rustls` + `tokio-rustls`：TLS 加解密。`rustls` 是同步的 TLS 库，`tokio-rustls` 把它包成异步
+- `tower-service`：`Service` trait 的定义 crate。手动调 `Router::call(request)` 时需要 `use tower_service::Service`
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

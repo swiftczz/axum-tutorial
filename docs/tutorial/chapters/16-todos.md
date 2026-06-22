@@ -24,6 +24,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.0", features = ["serde", "v4"] }
 ````
 
+本章是第一个完整 CRUD demo，相比前面章节新增：`uuid`（生成唯一 ID，启用 `serde` 支持序列化、`v4` 用随机算法）、`tower`（axum 底层依赖的 middleware 抽象，这里手动用 `timeout` layer）和 `tower-http`（HTTP middleware 工具集，启用 `add-extension` 给请求注入扩展、`trace` 加日志）。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

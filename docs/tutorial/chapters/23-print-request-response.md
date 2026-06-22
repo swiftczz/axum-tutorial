@@ -25,6 +25,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章相比前面章节新增 `http-body-util`（body 工具，提供 `BodyExt::collect` 把流式 body 读成 bytes 打印）。这章的核心就是"读 body 再放回去"，所以这个工具是关键。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

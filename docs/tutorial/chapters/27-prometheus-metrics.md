@@ -28,6 +28,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章相比前面章节新增两个依赖：`metrics`（指标 façade，提供 `counter!`/`histogram!` 宏的接口）和 `metrics-exporter-prometheus`（Prometheus 格式的 recorder 实现，负责存指标 + 导出文本）。两者关系：`metrics` 是接口，`metrics-exporter-prometheus` 是后端实现，业务代码只调宏不绑定后端。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

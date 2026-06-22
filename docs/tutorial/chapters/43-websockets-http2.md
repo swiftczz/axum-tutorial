@@ -28,6 +28,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章组合第 41 章 WebSocket + 第 46 章 TLS，相比前面章节新增：`axum-server` 启用 `tls-rustls`（HTTPS server，第 46 章详解）+ `tower-http` 启用 `fs`（`ServeDir` 提供静态 HTML 前端）。axum 的 `ws` feature 第 41 章已用。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

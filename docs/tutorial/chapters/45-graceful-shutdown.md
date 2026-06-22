@@ -25,6 +25,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章相比前面章节新增 `tower-http` 的 `timeout` feature（提供 `TimeoutLayer`，给每个请求设上限，防止慢请求卡死 graceful shutdown）。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

@@ -28,6 +28,8 @@ tokio = { version = "1.0", features = ["full"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章新增的依赖都用于**测试 UDS server**（生产代码只用 `axum` + `tokio`）：`hyper` + `hyper-util`（用 hyper client 通过 UDS 连 server 测试，reqwest 不直接支持 UDS）+ `http-body-util`（收集响应 body 做断言）。UDS 是 Unix 独有，所以代码用 `#[cfg(unix)]` 包起来。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

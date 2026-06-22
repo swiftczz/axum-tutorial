@@ -24,6 +24,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.0", features = ["serde", "v4"] }
 ````
 
+本章相比前面章节新增 `uuid`（生成用户唯一 ID，第 16 章已用过）。`axum` 启用 `tracing` feature（让 axum 内部日志走 tracing）和 `macros`（用 `#[derive(FromRequest)]` 等派生宏）。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

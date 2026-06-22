@@ -25,6 +25,8 @@ minijinja = "2"
 tokio = { version = "1.0", features = ["full"] }
 ````
 
+本章相比前面章节新增 `minijinja`（运行时模板引擎，Jinja2 语法）。对比第 28 章的 `askama`（编译期），minijinja 模板可在运行时加载/修改，开发体验好但性能略低。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

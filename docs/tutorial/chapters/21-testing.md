@@ -30,6 +30,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower = { version = "0.5.2", features = ["util"] }
 ````
 
+本章相比前面章节新增（多数是测试专用）：`http-body-util`（body 收集工具，把响应 body 读成 bytes 做断言）、`hyper-util`（启动测试 server）、`mime`（MIME 类型常量，断言 content-type 用）、`serde_json`（断言 body 是合法 JSON）。`tower` 放在 `[dev-dependencies]` 因为只在测试用 `ServiceExt::oneshot`。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

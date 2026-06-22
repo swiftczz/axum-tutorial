@@ -25,6 +25,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章相比前面章节新增 `tower-http` 的 `limit` feature（提供 `RequestBodyLimitLayer`，调整 axum 默认 2MB body 上限以支持大文件上传）。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

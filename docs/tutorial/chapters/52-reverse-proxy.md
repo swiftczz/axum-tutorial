@@ -24,6 +24,8 @@ hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", 
 tokio = { version = "1.0", features = ["full"] }
 ````
 
+本章是反向代理，新增 `hyper` + `hyper-util`（启用 `client` 用 hyper client 转发请求、`client-legacy` 用连接池、`http1` 解析 HTTP/1.1）。对比第 51 章 http-proxy（更复杂的代理，多一层 tower `MakeService`）和第 15 章 reqwest 转发（高层 API）。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

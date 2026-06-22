@@ -33,6 +33,8 @@ eventsource-stream = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 ````
 
+本章相比前面章节新增：`axum-extra` 的 `typed-header`（类型安全提取 `User-Agent` 头）+ `headers`（HTTP 头类型定义，提供 `UserAgent` 类型）+ `futures-util`（stream 工具，构造 SSE 事件流）+ `tokio-stream`（stream 扩展方法）。测试用：`eventsource-stream`（把 reqwest 的字节流解析成 SSE 事件，方便测试断言）+ `reqwest`（HTTP 客户端调 SSE 接口）。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

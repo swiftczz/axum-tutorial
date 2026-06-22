@@ -31,6 +31,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章是数据库第一章，新增三个 PG 相关依赖：`tokio-postgres`（最底层的异步 PostgreSQL 客户端，直接写 SQL 字符串）、`bb8`（通用异步连接池）、`bb8-postgres`（bb8 的 Postgres 适配，知道怎么建/回收 PG 连接）。三者关系：`tokio-postgres` 负责连 PG 跑 SQL，`bb8` + `bb8-postgres` 负责复用连接（避免每次请求新建 TCP 连接）。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

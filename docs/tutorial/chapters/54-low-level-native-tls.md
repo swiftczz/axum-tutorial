@@ -33,6 +33,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章和 ch53 骨架完全相同，只换 TLS backend：用 `native-tls`（系统 OpenSSL/SChannel，Linux/macOS 自动用系统库）+ `tokio-native-tls`（异步包装）。`hyper`/`hyper-util`/`tower-service` 同 ch53，见那章的依赖说明。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

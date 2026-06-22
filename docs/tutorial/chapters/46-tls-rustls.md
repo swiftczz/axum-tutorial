@@ -28,6 +28,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章相比前面章节新增 `axum-server`（启用 `tls-rustls` feature）。`axum::serve` 只支持明文 HTTP，要 HTTPS 必须用 `axum-server::bind_rustls` 一行启动（high-level API）。对比第 53 章手动 hyper + rustls（low-level）。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

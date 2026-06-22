@@ -25,6 +25,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章相比前面章节新增 `askama`（编译期模板引擎，模板在 `cargo build` 时编译成 Rust 代码，类型安全、性能好）。对比第 29 章的 `minijinja`（运行时模板），askama 改模板要重新编译，但能编译期检查变量名。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---

@@ -30,6 +30,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
+本章是 KV store 完整 demo，相比前面章节新增多种 `tower` 和 `tower-http` 的 middleware：`tower` 的 `timeout`（请求超时）、`load-shed`（过载丢弃）、`limit`（并发限制）；`tower-http` 的 `add-extension`（注入共享状态）、`auth`（基础认证）、`compression-full`（响应压缩）。这些 layer 组合演示了生产级 middleware 链。
+
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
 ---
