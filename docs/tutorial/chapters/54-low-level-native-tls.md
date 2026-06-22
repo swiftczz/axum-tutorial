@@ -32,6 +32,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：native-tls 差异**
+>
+> `Identity::from_pkcs8`（证书+私钥合成 Identity）+ `min_protocol_version(Tlsv12)` + `TlsAcceptor::from` 包装成 tokio 可 await。ALPN 支持跨平台不一致。
+
+
 ## 完整代码
 
 ````rust

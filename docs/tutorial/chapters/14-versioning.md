@@ -30,6 +30,13 @@ tower = { version = "0.5.2", features = ["util"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`FromRequestParts`**
+>
+> 版本 extractor 只读 parts（路径参数），不读 body，用 `FromRequestParts`。`Path<HashMap<String, String>>` 提取所有路径参数。
+
+
 ## 完整代码
 
 ````rust

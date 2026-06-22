@@ -29,6 +29,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`ServeDir`/`ServeFile` 是 Service**
+>
+> 不是 Handler！它们实现 Tower `Service` trait，用 `nest_service`/`route_service` 挂载，不能用 `get(handler)`。
+
+> **新面孔：`SetStatus` + SPA fallback**
+>
+> `SetStatus::new(ServeFile, StatusCode::NOT_FOUND)` 返回 index.html 但状态码 404——路径不存在，前端路由接管。
+
+
 ## 完整代码
 
 ````rust

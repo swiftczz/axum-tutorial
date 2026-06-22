@@ -28,6 +28,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`UnixListener` + 自定义 `Connected`**
+>
+> UDS 绑定文件路径不是端口。`Connected` trait 告诉 axum 怎么提取连接信息（`peer_addr` + `peer_cred`）。客户端用 `UnixStream` + Hyper。
+
+
 ## 完整代码
 
 ````rust

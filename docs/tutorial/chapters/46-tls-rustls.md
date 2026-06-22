@@ -28,6 +28,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`RustlsConfig::from_pem_file` + `axum_server::bind_rustls`**
+>
+> 读证书/私钥启动 HTTPS。HTTP→HTTPS 重定向用 `Redirect::permanent`。
+
+
 ## 完整代码
 
 ````rust

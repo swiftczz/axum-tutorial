@@ -27,6 +27,13 @@ tower = { version = "0.5.2", features = ["util"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`axum::serve` 内部就是 hyper**
+>
+> 5 步：accept TCP → TokioIo 适配 → service_fn 桥接 → hyper serve_connection → 返回 Response。需要自定义 accept loop 时用。
+
+
 ## 完整代码
 
 ````rust

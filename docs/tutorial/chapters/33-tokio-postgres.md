@@ -29,6 +29,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`PostgresConnectionManager` + bb8**
+>
+> manager 告诉 bb8 怎么创建 PG 连接，Pool 负责复用。`query_one("select 1 + 1", &[])` 执行 SQL 返回一行，`row.try_get(0)` 取列。
+
+
 ## 完整代码
 
 ````rust

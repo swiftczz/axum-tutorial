@@ -33,6 +33,17 @@ tower = { version = "0.5.2", features = ["util"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`validator::Validate`**
+>
+> 把校验规则写在字段上（`#[validate(length(min = 2))]`），自定义 `ValidatedForm<T>` 把 `Form<T>` 和校验组合成一个 extractor。
+
+> **新面孔：`ServerError` 统一错误**
+>
+> `thiserror` 的 `#[from]` 让 `?` 自动转换。两类错误：`ValidationError`（校验失败）和 `AxumFormRejection`（提取失败）。
+
+
 ## 完整代码
 
 ````rust

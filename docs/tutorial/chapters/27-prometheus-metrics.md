@@ -28,6 +28,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`PrometheusBuilder` + `counter!`/`histogram!`**
+>
+> counter 记累计次数（单调递增），histogram 记数值分布（用 buckets 算分位数）。label 必须低基数（用 `MatchedPath` 不用真实 URI）。
+
+
 ## 完整代码
 
 ````rust

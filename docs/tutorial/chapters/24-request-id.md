@@ -30,6 +30,13 @@ tower-http 启用 `request-id` 和 `trace` feature。
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`SetRequestIdLayer` / `PropagateRequestIdLayer`**
+>
+> 前者生成 request id 写入 header，后者把请求的 id 复制到响应 header。中间夹一层 TraceLayer 把 id 写入 span。
+
+
 ## 完整代码
 
 ````rust

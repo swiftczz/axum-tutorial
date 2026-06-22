@@ -26,6 +26,13 @@ tokio = { version = "1", features = ["full"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`hyper_util::client::legacy::Client`**
+>
+> 反向代理主动请求后端。`State<Client>` 共享 client。改写 URI 后 `client.request(req).await` 转发。
+
+
 ## 完整代码
 
 ````rust

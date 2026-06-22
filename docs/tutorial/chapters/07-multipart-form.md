@@ -29,6 +29,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`Multipart` extractor**
+>
+> 和 `Form<T>`（ch06）类似但更强大：`Form<T>` 一次性把所有字段解析成结构体，`Multipart` 逐个 field 读取，适合文件上传。需要启用 axum 的 `multipart` feature。
+
+> **新面孔：`DefaultBodyLimit` + `RequestBodyLimitLayer`**
+>
+> axum 默认对请求体设上限（防 DoS）。文件上传通常更大，先 `DefaultBodyLimit::disable()` 关闭默认，再设新上限。
+
+
 ## 完整代码
 
 ````rust

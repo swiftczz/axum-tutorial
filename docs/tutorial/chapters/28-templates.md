@@ -39,6 +39,17 @@ tower = { version = "0.5.2", features = ["util"] }
 
 `{{ name }}` 是模板变量,从 Rust 结构体同名字段读取。
 
+## 关键概念
+
+> **新面孔：Askama `#[derive(Template)]`**
+>
+> 编译期生成模板渲染代码。`#[template(path = "hello.html")]` 声明对应模板文件，字段名要和模板变量一致。
+
+> **新面孔：`HtmlTemplate<T>` 包装器**
+>
+> Askama 模板不知道怎么变成 HTTP 响应，`HtmlTemplate<T>` 实现了 `IntoResponse` 做适配。
+
+
 ## 完整代码
 
 ````rust

@@ -29,6 +29,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：MongoDB `Client` 自带连接池**
+>
+> 不需要 bb8。`Collection<Member>` 告诉 driver 文档和 Rust 结构体互转。`doc!{"_id": id}` 构造 BSON 查询条件。
+
+
 ## 完整代码
 
 ````rust

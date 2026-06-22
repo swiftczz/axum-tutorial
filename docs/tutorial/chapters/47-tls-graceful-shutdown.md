@@ -28,6 +28,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`axum_server::Handle`**
+>
+> 和 `with_graceful_shutdown` 不同：`axum_server::bind_rustls` 用 Handle 控制关闭。一个 `shutdown_signal` future 同时触发 HTTPS（Handle）和 HTTP redirect（with_graceful_shutdown）。
+
+
 ## 完整代码
 
 ````rust

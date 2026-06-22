@@ -31,6 +31,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`reqwest::Client` + `State<Client>`**
+>
+> HTTP 客户端适合复用（内部维护连接池），放进 `State` 让所有 handler 共享。`State(client): State<Client>` 是解构语法。
+
+> **新面孔：`Body::from_stream`**
+>
+> 流式转发的关键：reqwest 每到一块 bytes，axum 就往客户端发一块，不把整个响应读进内存。
+
+
 ## 完整代码
 
 ````rust

@@ -31,6 +31,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`redis::Client` + bb8**
+>
+> Redis 单线程，一条连接吞吐大。`AsyncCommands` trait 提供 `get`/`set`。`conn` 要 `mut`（Redis 命令需可变连接引用）。
+
+
 ## 完整代码
 
 ````rust

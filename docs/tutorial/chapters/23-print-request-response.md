@@ -27,6 +27,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：body 只能消费一次**
+>
+> 请求 body 和响应 body 都是流式读取的。middleware 读完后必须用 `Body::from(bytes)` 重建，否则后续 handler/客户端读不到。
+
+
 ## 完整代码
 
 ````rust

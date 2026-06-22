@@ -27,6 +27,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`FromRequest`**
+>
+> 和 `FromRequestParts`（ch10/12）不同，`FromRequest` 能消费整个请求 body。自定义 `JsonOrForm<T>` 需要它来根据 content-type 选择解析方式。
+
+> **新面孔：`RequestExt::extract`**
+>
+> 在自定义 extractor 内部复用其他 extractor：`req.extract::<Json<T>>().await` 从同一个 request 里运行 `Json<T>` 提取。
+
+
 ## 完整代码
 
 ````rust

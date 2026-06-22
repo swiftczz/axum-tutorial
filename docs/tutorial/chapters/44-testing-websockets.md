@@ -27,6 +27,13 @@ tokio-tungstenite = "0.29"
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：集成测试 vs 单元测试**
+>
+> 集成测试启动真实服务 + `tokio_tungstenite` 连接；单元测试用泛型 `Sink`/`Stream` + `futures_channel::mpsc` channel 模拟。
+
+
 ## 完整代码
 
 ````rust

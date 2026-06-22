@@ -30,6 +30,13 @@ axum 启用 `ws` + `http2` feature;`axum-server` 启用 `tls-rustls`。
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：HTTP/2 WebSocket + `enable_connect_protocol`**
+>
+> HTTP/2 WebSocket 使用扩展 CONNECT 机制。`axum_server::bind_rustls` 需手动启用 `enable_connect_protocol`（`axum::serve` 默认启用）。ALPN 协商 h2/http1.1。
+
+
 ## 完整代码
 
 ````rust

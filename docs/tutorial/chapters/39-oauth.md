@@ -33,6 +33,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：OAuth 授权码流程**
+>
+> 客户端→第三方登录→回调 code→用 code+secret 换 token→获取用户信息→建立 session。`client_secret` 不能放前端。
+
+> **新面孔：CSRF state**
+>
+> 防 login CSRF：每次发起授权生成随机 token 存 session，回调时比对。攻击者拿不到受害者 session 就无法伪造。
+
+
 ## 完整代码(核心版)
 
 ````rust

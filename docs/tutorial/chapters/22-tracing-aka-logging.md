@@ -27,6 +27,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`TraceLayer` + `MatchedPath`**
+>
+> `MatchedPath` 是路由模板（如 `/users/{id}`），不是真实 URI（`/users/42`），更适合日志聚合。
+
+> **新面孔：5 个回调**
+>
+> on_request（请求开始）、on_response（响应完成）、on_body_chunk（每块 body）、on_eos（stream 结束）、on_failure（请求失败）。
+
+
 ## 完整代码
 
 ````rust

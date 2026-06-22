@@ -25,6 +25,13 @@ tokio = { version = "1.0", features = ["full"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：MiniJinja `Environment`**
+>
+> 运行时模板环境（Askama 是编译期）。`include_str!` 编译期嵌入模板内容。`State<Arc<AppState>>` 让多 handler 共享。
+
+
 ## 完整代码
 
 ````rust

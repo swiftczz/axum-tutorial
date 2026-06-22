@@ -42,6 +42,13 @@ CREATE TABLE "users"(
 
 `down.sql` 是 `DROP TABLE "users";`,用于回滚。
 
+## 关键概念
+
+> **新面孔：`deadpool-diesel` + `conn.interact`**
+>
+> Diesel 是同步 driver，`interact` 把闭包扔到阻塞线程池（本质 `spawn_blocking`），不卡 async runtime。返回两层 Result。
+
+
 ## 完整代码
 
 ````rust

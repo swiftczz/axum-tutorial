@@ -35,6 +35,13 @@ reqwest = { version = "0.12", default-features = false, features = ["stream"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：SSE（Server-Sent Events）**
+>
+> 服务端→客户端单向推送（WebSocket 是双向）。`Sse<Stream>` 把 Rust stream 变成 SSE 响应。`keep_alive` 防长连接被代理断开。
+
+
 ## 完整代码
 
 ````rust

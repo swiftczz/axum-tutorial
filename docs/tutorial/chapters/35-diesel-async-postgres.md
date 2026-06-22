@@ -32,6 +32,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`AsyncDieselConnectionManager` + bb8**
+>
+> diesel-async 查询本身异步，不需要 `interact` 包装。`HasQuery` 提供 `User::query()`。`AsyncMigrationHarness` 异步跑 migration。
+
+
 ## 完整代码
 
 ````rust

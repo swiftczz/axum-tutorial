@@ -21,6 +21,13 @@ tower-http = { version = "0.6.1", features = ["cors"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：CORS + preflight**
+>
+> CORS 是浏览器规则（不是后端鉴权）。非简单请求（POST JSON 等）会先触发 preflight（OPTIONS），`CorsLayer` 自动回复。
+
+
 ## src/main.rs
 
 ````rust

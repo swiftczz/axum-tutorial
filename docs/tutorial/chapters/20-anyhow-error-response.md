@@ -29,6 +29,17 @@ tower = { version = "0.5.2", features = ["util"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`AppError(anyhow::Error)` newtype**
+>
+> `anyhow` 适合应用内部快速包装错误。用 newtype 绕开 orphan rule（不能给外部类型的 `IntoResponse` 实现）。
+
+> **新面孔：blanket `impl From`**
+>
+> `impl<E> From<E> for AppError where E: Into<anyhow::Error>` 让 `?` 自动转换。代价：无法再区分错误类型（都变 500）。
+
+
 ## 完整代码
 
 ````rust

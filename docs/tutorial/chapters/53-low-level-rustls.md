@@ -30,6 +30,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：低层 rustls accept loop**
+>
+> `ServerConfig` + ALPN（`alpn_protocols`）→ `TlsAcceptor::accept` 握手 → `TokioIo` + `service_fn` + `auto::Builder`。`auto::Builder` 根据 ALPN 协商结果选 h2/http1.1。
+
+
 ## 完整代码
 
 ````rust

@@ -26,6 +26,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`with_graceful_shutdown`**
+>
+> 传入一个 future，完成时服务开始关闭：停止接新请求 → 等已有请求完成。`TimeoutLayer` 防止 forever 请求阻塞关闭。
+
+
 ## 完整代码
 
 ````rust

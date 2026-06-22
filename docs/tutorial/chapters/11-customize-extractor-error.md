@@ -32,6 +32,21 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
+## 关键概念
+
+> **新面孔：`WithRejection`**
+>
+> `axum_extra` 提供的包装器：把已有 extractor 的 rejection 换成自己的错误类型。最简单但 handler 参数类型较长。
+
+> **新面孔：`#[derive(FromRequest)]`**
+>
+> axum macros feature 的派生宏：自定义类型内部复用 `axum::Json`，handler 参数和原生一样干净。
+
+> **新面孔：手写 `FromRequest`**
+>
+> 完全控制提取流程，能读 `MatchedPath` 等上下文。注意：parts 类提取在 body 消费之前做。
+
+
 ## 完整代码
 
 ````rust
