@@ -2,122 +2,35 @@
 
 对应示例：`examples/low-level-native-tls`
 
-本章目标：使用 `tokio-native-tls` 手写 TLS accept loop，并把 TLS stream 交给 Hyper/Axum。
+和第 53 章 low-level-rustls 结构几乎一样,差异在 TLS 实现换成 native-tls(平台 TLS 实现)。用 `tokio-native-tls` 手写 TLS accept loop,把 TLS stream 交给 Hyper/Axum。
 
-这一章和 low-level-rustls 结构几乎一样。  
-差异在 TLS 实现换成了 native-tls。
+> **本章只讲和 rustls 的差异**。完整 accept loop + TLS + Hyper 桥接链路见第 53 章——TokioIo 适配、service_fn 桥接、auto::Builder 协商等都一样,这里不重复。
 
-## 这个小项目在做什么
+## Cargo.toml
 
-链路：
+````toml
+[package]
+name = "example-low-level-native-tls"
+version = "0.1.0"
+edition = "2024"
+publish = false
 
-```text
-TcpListener
--> native-tls accept
--> TokioIo
--> Hyper service_fn
--> Axum Router
-```
-
-访问：
-
-````bash
-curl -k https://localhost:3000
+[dependencies]
+axum = "0.8"
+hyper = { version = "1.0.0", features = ["full"] }
+hyper-util = { version = "0.1" }
+tokio = { version = "1", features = ["full"] }
+tokio-native-tls = "0.3.1"
+tower-service = "0.3.2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
-返回：
+> 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-```text
-Hello, World!
-```
-
-## native-tls 是什么
-
-`native-tls` 会使用平台 TLS 实现。  
-不同系统底层可能不同。
-
-这和 rustls 不同：
-
-```text
-rustls      -> Rust TLS 实现
-native-tls  -> 平台 TLS 实现
-```
-
-## 关键依赖
-
-- `tokio-native-tls`
-- `hyper`
-- `hyper-util`
-- `tower-service`
-- `axum`
-
-## 第一步：读取 PEM 并创建 NativeTlsAcceptor
-
-源码：
+## src/main.rs
 
 ````rust
-fn native_tls_acceptor(key_file: PathBuf, cert_file: PathBuf) -> NativeTlsAcceptor {
-    let key_pem = std::fs::read_to_string(&key_file).unwrap();
-    let cert_pem = std::fs::read_to_string(&cert_file).unwrap();
-
-    let id = Identity::from_pkcs8(cert_pem.as_bytes(), key_pem.as_bytes()).unwrap();
-    NativeTlsAcceptor::builder(id)
-        .min_protocol_version(Some(Protocol::Tlsv12))
-        .build()
-        .unwrap()
-}
-````
-
-它读取 cert 和 key，然后创建 identity。  
-同时设置最低 TLS 版本为 TLS 1.2。
-
-## 第二步：转换成 Tokio TlsAcceptor
-
-源码：
-
-````rust
-let tls_acceptor = native_tls_acceptor(...);
-let tls_acceptor = TlsAcceptor::from(tls_acceptor);
-````
-
-第一步是 native-tls acceptor。  
-第二步包装成 Tokio 可 await 的 acceptor。
-
-## 第三步：accept TCP 并做 TLS handshake
-
-源码：
-
-````rust
-let (cnx, addr) = tcp_listener.accept().await.unwrap();
-
-tokio::spawn(async move {
-    let Ok(stream) = tls_acceptor.accept(cnx).await else {
-        error!("error during tls handshake connection from {}", addr);
-        return;
-    };
-    ...
-});
-````
-
-握手成功后，后面就和 rustls 版本一样。
-
-## 函数职责速查
-
-- `main`：创建 native TLS acceptor，accept TCP，TLS 握手，交给 Hyper。
-- `native_tls_acceptor`：从 PEM 创建 native-tls acceptor。
-- `handler`：返回 Hello。
-
-## 带中文注释的手写版
-
-完整 `src/main.rs`：
-
-````rust
-//! Run with
-//!
-//! ```not_rust
-//! cargo run -p example-low-level-native-tls
-//! ```
-
 use axum::{extract::Request, routing::get, Router};
 use hyper::body::Incoming;
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -133,7 +46,6 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() {
-    // 初始化日志。
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -142,17 +54,11 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // native_tls_acceptor 读取 PEM 证书和私钥，创建 native-tls acceptor。
     let tls_acceptor = native_tls_acceptor(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("self_signed_certs")
-            .join("key.pem"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("self_signed_certs")
-            .join("cert.pem"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("self_signed_certs").join("key.pem"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("self_signed_certs").join("cert.pem"),
     );
 
-    // 包成 tokio-native-tls 的 TlsAcceptor，之后就可以 .await TLS 握手。
     let tls_acceptor = TlsAcceptor::from(tls_acceptor);
     let bind = "[::1]:3000";
     let tcp_listener = TcpListener::bind(bind).await.unwrap();
@@ -164,20 +70,16 @@ async fn main() {
         let tower_service = app.clone();
         let tls_acceptor = tls_acceptor.clone();
 
-        // 先接收普通 TCP 连接。
         let (cnx, addr) = tcp_listener.accept().await.unwrap();
 
         tokio::spawn(async move {
-            // 再通过 native-tls 完成 TLS 握手。
             let Ok(stream) = tls_acceptor.accept(cnx).await else {
                 error!("error during tls handshake connection from {}", addr);
                 return;
             };
 
-            // TLS stream 适配成 Hyper IO。
             let stream = TokioIo::new(stream);
 
-            // Hyper service 调用 Axum Router。
             let hyper_service = hyper::service::service_fn(move |request: Request<Incoming>| {
                 tower_service.clone().call(request)
             });
@@ -198,57 +100,94 @@ async fn handler() -> &'static str {
 }
 
 fn native_tls_acceptor(key_file: PathBuf, cert_file: PathBuf) -> NativeTlsAcceptor {
-    // native-tls 这里从 PEM 文件读取证书和私钥。
     let key_pem = std::fs::read_to_string(&key_file).unwrap();
     let cert_pem = std::fs::read_to_string(&cert_file).unwrap();
 
-    // Identity 表示服务端 TLS 身份，由证书和私钥组成。
     let id = Identity::from_pkcs8(cert_pem.as_bytes(), key_pem.as_bytes()).unwrap();
     NativeTlsAcceptor::builder(id)
-        // 限制最低 TLS 版本，避免使用过旧协议。
         .min_protocol_version(Some(Protocol::Tlsv12))
         .build()
         .unwrap()
 }
 ````
 
-## 运行和验证
+## 运行
 
 ````bash
+cd examples
 cargo run -p example-low-level-native-tls
 curl -k https://localhost:3000
 ````
 
-## 常见卡点
+## 解读
 
-### 1. native-tls 和 rustls 选哪个？
+### native-tls vs rustls
 
-rustls 更纯 Rust。  
-native-tls 更依赖系统 TLS 能力。项目选择取决于部署环境和依赖要求。
+```text
+rustls     → 纯 Rust TLS 实现
+native-tls → 平台 TLS 实现(macOS Secure Transport / Windows SChannel / Linux OpenSSL)
+```
 
-### 2. 为什么要设置 TLS 1.2？
+不同系统底层不同。选哪个取决于部署环境和依赖要求——rustls 更纯 Rust 易交叉编译,native-tls 依赖系统 TLS 能力。
 
-示例限制最低协议版本，避免过旧 TLS 版本。
+### 和 rustls 的两个差异
+
+**差异 1:证书读取用 `Identity::from_pkcs8`**
+
+````rust
+fn native_tls_acceptor(key_file: PathBuf, cert_file: PathBuf) -> NativeTlsAcceptor {
+    let key_pem = std::fs::read_to_string(&key_file).unwrap();
+    let cert_pem = std::fs::read_to_string(&cert_file).unwrap();
+
+    let id = Identity::from_pkcs8(cert_pem.as_bytes(), key_pem.as_bytes()).unwrap();
+    NativeTlsAcceptor::builder(id)
+        .min_protocol_version(Some(Protocol::Tlsv12))   // 限制最低 TLS 版本避免过旧协议
+        .build()
+        .unwrap()
+}
+````
+
+native-tls 把证书和私钥合成一个 `Identity`(rustls 分别传 certs 和 key)。`.min_protocol_version(Some(Protocol::Tlsv12))` 设最低 TLS 1.2。
+
+**差异 2:acceptor 包一层 tokio 包装**
+
+````rust
+let tls_acceptor = native_tls_acceptor(...);     // native-tls acceptor(同步 API)
+let tls_acceptor = TlsAcceptor::from(tls_acceptor);   // 包成 tokio-native-tls 可 await 的
+````
+
+native-tls 是同步 API,`tokio_native_tls::TlsAcceptor::from` 包装成可 `.await` 的。之后 accept TCP、TLS handshake、`TokioIo`、`service_fn`、`auto::Builder` 都和第 53 章一样。
+
+### ⚠️ native-tls 没有显式 ALPN
+
+第 53 章 rustls 显式设 `config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1"]`。native-tls 在不同平台对 ALPN 支持不一致(取决于平台 TLS 实现),所以本章没显式设——这通常意味着 HTTP/2 协商不如 rustls 可靠。如果需要稳定的 HTTP/2 over TLS,优先用 rustls。
+
+## 常见问题
+
+**native-tls 和 rustls 选哪个?** rustls 更纯 Rust 易交叉编译,native-tls 依赖系统 TLS。项目选择取决于部署环境和依赖要求。
+
+**为什么设 TLS 1.2?** 限制最低协议版本避免过旧 TLS。
+
+**ALPN 怎么办?** native-tls 不同平台 ALPN 支持不一致,本章没显式设;需稳定 HTTP/2 over TLS 优先用 rustls。
 
 ## 手写任务
 
 1. 读取 cert/key。
 2. `Identity::from_pkcs8`。
-3. 构造 native-tls acceptor。
+3. 构造 native-tls acceptor 设最低 TLS 1.2。
 4. 包成 tokio-native-tls acceptor。
-5. TLS handshake 后交给 Hyper。
+5. TLS handshake 后交给 Hyper(同第 53 章)。
 
-## 本章真正要记住什么
+## 小结
 
-native-tls 版本的链路是：
-
-```text
-TCP -> native-tls -> TokioIo -> Hyper -> Axum
-```
+- native-tls 版链路:`TCP → native-tls → TokioIo → Hyper → axum`,和 rustls 版结构完全一样,差异只在 TLS 库。
+- 两个差异:`Identity::from_pkcs8`(证书+私钥合成 Identity,rustls 分别传)+ `TlsAcceptor::from`(native-tls 同步 API 包成 tokio 可 await)。
+- native-tls 用平台 TLS 实现(macOS Secure Transport/Windows SChannel/Linux OpenSSL),rustls 纯 Rust;选哪个看部署环境和依赖要求。
+- native-tls 不同平台 ALPN 支持不一致,需稳定 HTTP/2 over TLS 优先 rustls。
 
 ## 源码对照
 
+- `examples/low-level-native-tls/Cargo.toml`
 - `examples/low-level-native-tls/src/main.rs`
 - `examples/low-level-native-tls/self_signed_certs/cert.pem`
 - `examples/low-level-native-tls/self_signed_certs/key.pem`
-- `examples/low-level-native-tls/Cargo.toml`
