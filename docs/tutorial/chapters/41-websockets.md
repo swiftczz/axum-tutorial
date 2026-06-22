@@ -47,22 +47,66 @@ use axum::{
     routing::any,
     Router,
 };
+use axum_extra::TypedHeader;
+
+use std::ops::ControlFlow;
+use std::{net::SocketAddr, path::PathBuf};
+use tower_http::{
+    services::ServeDir,
+    trace::{DefaultMakeSpan, TraceLayer},
+};
+
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+// Allows extracting the IP of the connecting user
 use axum::extract::connect_info::ConnectInfo;
 use axum::extract::ws::CloseFrame;
-use axum_extra::TypedHeader;
+
+// Allows splitting the websocket stream into separate TX and RX branches
 use futures_util::{sink::SinkExt, stream::StreamExt};
-use std::{net::SocketAddr, ops::ControlFlow, path::PathBuf};
-use tower_http::{services::ServeDir, trace::{DefaultMakeSpan, TraceLayer}};
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                format!("{}=debug,tower_http=debug", env!("CARGO_CRATE_NAME")).into()
+            }),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let assets_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
+
+    let app = Router::new()
+        .fallback_service(ServeDir::new(assets_dir).append_index_html_on_directories(true))
+        .route("/ws", any(ws_handler))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
+        );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+        .await
+        .unwrap();
+    tracing::debug!("listening on {}", listener.local_addr().unwrap());
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await;
+}
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
     user_agent: Option<TypedHeader<headers::UserAgent>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
-    let user_agent = user_agent
-        .map(|TypedHeader(ua)| ua.to_string())
-        .unwrap_or_else(|| "Unknown browser".to_string());
-
+    let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
+        user_agent.to_string()
+    } else {
+        String::from("Unknown browser")
+    };
     println!("`{user_agent}` at {addr} connected.");
 
     ws.on_upgrade(move |socket| handle_socket(socket, addr))
@@ -72,13 +116,21 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
     if socket
         .send(Message::Ping(Bytes::from_static(&[1, 2, 3])))
         .await
-        .is_err()
+        .is_ok()
     {
+        println!("Pinged {who}...");
+    } else {
+        println!("Could not send ping {who}!");
         return;
     }
 
-    if let Some(Ok(msg)) = socket.recv().await {
-        if process_message(msg, who).is_break() {
+    if let Some(msg) = socket.recv().await {
+        if let Ok(msg) = msg {
+            if process_message(msg, who).is_break() {
+                return;
+            }
+        } else {
+            println!("client {who} abruptly disconnected");
             return;
         }
     }
@@ -89,6 +141,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
             .await
             .is_err()
         {
+            println!("client {who} abruptly disconnected");
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -97,52 +150,95 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
     let (mut sender, mut receiver) = socket.split();
 
     let mut send_task = tokio::spawn(async move {
-        for i in 0..20 {
+        let n_msg = 20;
+        for i in 0..n_msg {
             if sender
                 .send(Message::Text(format!("Server message {i} ...").into()))
                 .await
                 .is_err()
             {
-                return;
+                return i;
             }
+
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         }
 
-        let _ = sender
+        println!("Sending close to {who}...");
+        if let Err(e) = sender
             .send(Message::Close(Some(CloseFrame {
                 code: axum::extract::ws::close_code::NORMAL,
                 reason: Utf8Bytes::from_static("Goodbye"),
             })))
-            .await;
+            .await
+        {
+            println!("Could not send Close due to {e}, probably it is ok?");
+        }
+        n_msg
     });
 
     let mut recv_task = tokio::spawn(async move {
+        let mut cnt = 0;
         while let Some(Ok(msg)) = receiver.next().await {
+            cnt += 1;
             if process_message(msg, who).is_break() {
                 break;
             }
         }
+        cnt
     });
 
     tokio::select! {
-        _ = (&mut send_task) => recv_task.abort(),
-        _ = (&mut recv_task) => send_task.abort(),
+        rv_a = (&mut send_task) => {
+            match rv_a {
+                Ok(a) => println!("{a} messages sent to {who}"),
+                Err(a) => println!("Error sending messages {a:?}")
+            }
+            recv_task.abort();
+        },
+        rv_b = (&mut recv_task) => {
+            match rv_b {
+                Ok(b) => println!("Received {b} messages"),
+                Err(b) => println!("Error receiving messages {b:?}")
+            }
+            send_task.abort();
+        }
     }
+
+    println!("Websocket context {who} destroyed");
 }
 
 fn process_message(msg: Message, who: SocketAddr) -> ControlFlow<(), ()> {
     match msg {
-        Message::Text(t) => println!(">>> {who} sent str: {t:?}"),
-        Message::Binary(d) => println!(">>> {who} sent {} bytes", d.len()),
-        Message::Close(_) => return ControlFlow::Break(()),
-        Message::Pong(v) => println!(">>> {who} sent pong with {v:?}"),
-        Message::Ping(v) => println!(">>> {who} sent ping with {v:?}"),
+        Message::Text(t) => {
+            println!(">>> {who} sent str: {t:?}");
+        }
+        Message::Binary(d) => {
+            println!(">>> {who} sent {} bytes: {d:?}", d.len());
+        }
+        Message::Close(c) => {
+            if let Some(cf) = c {
+                println!(
+                    ">>> {who} sent close with code {} and reason `{}`",
+                    cf.code, cf.reason
+                );
+            } else {
+                println!(">>> {who} somehow sent close message without CloseFrame");
+            }
+            return ControlFlow::Break(());
+        }
+
+        Message::Pong(v) => {
+            println!(">>> {who} sent pong with {v:?}");
+        }
+        Message::Ping(v) => {
+            println!(">>> {who} sent ping with {v:?}");
+        }
     }
     ControlFlow::Continue(())
 }
 ````
 
-> main 入口 + 静态文件 ServeDir 见源码对照,逻辑同第 29/40 章。
+> 上面是完整 main.rs。配套的 `src/client.rs`(Rust 客户端示例)、`assets/index.html`、`assets/script.js` 见源码对照。
 
 ## 运行
 
