@@ -2,7 +2,9 @@
 
 对应示例：`examples/websockets`
 
-上一章 SSE 是服务端单向推送,这章 WebSocket 是**双向通信**(浏览器 ↔ 服务端)。理解 WebSocket 的 HTTP upgrade、连接状态机、消息类型、并发收发,以及 axum 的 `WebSocketUpgrade` 和 `WebSocket` 用法。
+上一章 SSE 是服务端单向推送。这章 WebSocket 是**双向通信**（浏览器 ↔ 服务端）。我们分 4 步从零搭出来。
+
+相比上一章新引入：`WebSocketUpgrade`（HTTP→WebSocket 升级）、`Message`（消息类型）、`socket.split()`（拆分收发）、`tokio::select!`（并发收发）。
 
 ## Cargo.toml
 
@@ -37,7 +39,206 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+---
+
+## 第一步：HTTP upgrade——最小 WebSocket 服务
+
+WebSocket 不是凭空建立的。客户端先发一个 HTTP 请求要求"升级协议"，服务端同意后切换到 WebSocket。所以代码分两阶段：`ws_handler` 处理升级前的 HTTP 请求，`handle_socket` 处理升级后的 WebSocket 连接。
+
+````rust
+use axum::{
+    extract::ws::{WebSocket, WebSocketUpgrade},
+    response::IntoResponse,
+    routing::any,
+    Router,
+};
+use axum::extract::connect_info::ConnectInfo;
+use axum_extra::TypedHeader;
+use std::net::SocketAddr;
+
+#[tokio::main]
+async fn main() {
+    let app = Router::new().route("/ws", any(ws_handler));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+        .await.unwrap();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await;
+}
+
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    user_agent: Option<TypedHeader<headers::UserAgent>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> impl IntoResponse {
+    let user_agent = if let Some(TypedHeader(ua)) = user_agent {
+        ua.to_string()
+    } else {
+        String::from("Unknown browser")
+    };
+    println!("`{user_agent}` at {addr} connected.");
+
+    // upgrade 成功后，把 WebSocket 交给 handle_socket
+    ws.on_upgrade(move |socket| handle_socket(socket, addr))
+}
+
+async fn handle_socket(socket: WebSocket, who: SocketAddr) {
+    println!("WebSocket connection from {who} established!");
+    // 连接建立后什么都不做，连接会保持直到客户端断开
+}
+````
+
+> **新面孔：`WebSocketUpgrade` + `on_upgrade`**
+>
+> `WebSocketUpgrade` 是 axum 的提取器。当客户端发来 WebSocket 升级请求时，axum 通过它完成 HTTP→WebSocket 协议切换。`ws.on_upgrade(closure)` 表示升级成功后把 `WebSocket` 交给处理函数。
+>
+> **新面孔：`ConnectInfo` + `into_make_service_with_connect_info`**
+>
+> `ConnectInfo(addr): ConnectInfo<SocketAddr>` 提取客户端 IP 地址。必须在 `axum::serve` 里用 `into_make_service_with_connect_info::<SocketAddr>()`，否则拿不到地址。
+
+---
+
+## 第二步：消息收发——Ping、文本、Close
+
+连接建立后，可以收发消息。WebSocket 有 5 种消息类型：
+
+````rust
+use axum::{body::Bytes, extract::ws::{Message, CloseFrame, Utf8Bytes}};
+use std::ops::ControlFlow;
+
+async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
+    // 1. 先发一个 Ping，测试连接是否通
+    if socket.send(Message::Ping(Bytes::from_static(&[1, 2, 3]))).await.is_ok() {
+        println!("Pinged {who}...");
+    } else {
+        println!("Could not send ping {who}!");
+        return;
+    }
+
+    // 2. 接收一条消息
+    if let Some(msg) = socket.recv().await {
+        if let Ok(msg) = msg {
+            if process_message(msg, who).is_break() {
+                return;  // 收到 Close，退出
+            }
+        } else {
+            println!("client {who} abruptly disconnected");
+            return;
+        }
+    }
+
+    // 3. 连发几条欢迎消息
+    for i in 1..5 {
+        if socket.send(Message::Text(format!("Hi {i} times!").into())).await.is_err() {
+            println!("client {who} abruptly disconnected");
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+fn process_message(msg: Message, who: SocketAddr) -> ControlFlow<(), ()> {
+    match msg {
+        Message::Text(t) => println!(">>> {who} sent str: {t:?}"),
+        Message::Binary(d) => println!(">>> {who} sent {} bytes: {d:?}", d.len()),
+        Message::Close(c) => {
+            if let Some(cf) = c {
+                println!(">>> {who} sent close with code {} and reason `{}`", cf.code, cf.reason);
+            }
+            return ControlFlow::Break(());  // Close → 退出
+        }
+        Message::Pong(v) => println!(">>> {who} sent pong with {v:?}"),
+        Message::Ping(v) => println!(">>> {who} sent ping with {v:?}"),
+    }
+    ControlFlow::Continue(())
+}
+````
+
+> **新面孔：`Message` 类型 + `ControlFlow`**
+>
+> WebSocket 消息有 5 种：`Text`（文本）、`Binary`（二进制）、`Close`（关闭）、`Ping`/`Pong`（心跳检测）。
+>
+> `socket.recv()` 和 `socket.send()` 分别收发单条消息。`recv()` 返回 `Option<Result<Message, _>>`——`None` 表示连接关闭。
+>
+> `ControlFlow::Break` 表示收到 Close 应退出读取循环，`Continue` 表示继续处理。
+
+---
+
+## 第三步：split + 并发收发
+
+到目前为止发送和接收都在同一个流程里串行执行。真实场景需要**同时收发**——后台持续发消息，同时接收客户端消息。
+
+`socket.split()` 把 WebSocket 拆成 `sender` 和 `receiver` 两半，用两个 `tokio::spawn` 任务分别处理：
+
+````rust
+use futures_util::{sink::SinkExt, stream::StreamExt};
+
+// split 后可以同时收发
+let (mut sender, mut receiver) = socket.split();
+
+// 任务一：每 300ms 发一条消息，发 20 条后发 Close
+let mut send_task = tokio::spawn(async move {
+    let n_msg = 20;
+    for i in 0..n_msg {
+        if sender.send(Message::Text(format!("Server message {i} ...").into())).await.is_err() {
+            return i;  // 发送失败，客户端可能断了
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    }
+
+    println!("Sending close to {who}...");
+    let _ = sender.send(Message::Close(Some(CloseFrame {
+        code: axum::extract::ws::close_code::NORMAL,
+        reason: Utf8Bytes::from_static("Goodbye"),
+    }))).await;
+    n_msg
+});
+
+// 任务二：持续接收客户端消息
+let mut recv_task = tokio::spawn(async move {
+    let mut cnt = 0;
+    while let Some(Ok(msg)) = receiver.next().await {
+        cnt += 1;
+        if process_message(msg, who).is_break() {
+            break;
+        }
+    }
+    cnt
+});
+
+// 任意一边结束就取消另一边
+tokio::select! {
+    rv_a = (&mut send_task) => {
+        match rv_a {
+            Ok(a) => println!("{a} messages sent to {who}"),
+            Err(a) => println!("Error sending messages {a:?}")
+        }
+        recv_task.abort();
+    },
+    rv_b = (&mut recv_task) => {
+        match rv_b {
+            Ok(b) => println!("Received {b} messages"),
+            Err(b) => println!("Error receiving messages {b:?}")
+        }
+        send_task.abort();
+    }
+}
+````
+
+> **新面孔：`split` + `SinkExt`/`StreamExt` + `tokio::select!`**
+>
+> `socket.split()` 把 WebSocket 拆成 sender（只发）和 receiver（只收），这样可以两个任务同时工作。
+>
+> `SinkExt` 提供 `sender.send()`，`StreamExt` 提供 `receiver.next()`。
+>
+> `tokio::select!` 同时等待多个 future，谁先完成就执行对应分支。发送或接收任意一侧结束，就 abort 另一个——WebSocket 连接生命周期该收尾了。
+
+---
+
+## 完整代码
 
 ````rust
 use axum::{
@@ -58,11 +259,9 @@ use tower_http::{
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-// Allows extracting the IP of the connecting user
 use axum::extract::connect_info::ConnectInfo;
 use axum::extract::ws::CloseFrame;
 
-// Allows splitting the websocket stream into separate TX and RX branches
 use futures_util::{sink::SinkExt, stream::StreamExt};
 
 #[tokio::main]
@@ -238,7 +437,7 @@ fn process_message(msg: Message, who: SocketAddr) -> ControlFlow<(), ()> {
 }
 ````
 
-> 上面是完整 main.rs。配套的 `src/client.rs`(Rust 客户端示例)、`assets/index.html`、`assets/script.js` 见源码对照。
+> 上面是完整 main.rs。配套的 `src/client.rs`（Rust 客户端示例）、`assets/index.html`、`assets/script.js` 见源码对照。
 
 ## 运行
 
@@ -246,169 +445,36 @@ fn process_message(msg: Message, who: SocketAddr) -> ControlFlow<(), ()> {
 cargo run -p example-websockets --bin example-websockets   # 服务端
 ````
 
-浏览器打开 `http://localhost:3000`,打开 Console 观察服务端消息。或运行 Rust 客户端:
+浏览器打开 `http://localhost:3000`，打开 Console 观察服务端消息。或运行 Rust 客户端：
 
 ````bash
 cargo run -p example-websockets --bin example-client
 ````
 
-## 解读
+## ⚠️ 生产级提示：心跳与超时
 
-### WebSocket vs SSE
+本示例只在连接建立时发了一个 Ping，没有周期性心跳和超时。生产环境会引发**半开连接泄漏**——客户端断网后 TCP 层没正常关闭，服务端 socket 还"活着"一直等消息。
 
-```text
-SSE:       服务端 → 客户端单向推送
-WebSocket: 浏览器 ↔ 服务端双向通信
-```
-
-需双向实时通信用 WebSocket;只需服务端推送(通知/进度/日志)用 SSE 更简单。
-
-### HTTP upgrade(两个阶段)
-
-WebSocket 不是凭空建立的,先发一个 HTTP 请求要求升级协议(`HTTP → WebSocket`)。所以源码分两阶段:
-
-```text
-ws_handler    处理 upgrade 前的 HTTP 请求(可读 User-Agent/客户端 IP/headers)
-handle_socket 处理 upgrade 后的 WebSocket 连接
-```
-
-### `WebSocketUpgrade` extractor
-
-````rust
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    user_agent: Option<TypedHeader<headers::UserAgent>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> impl IntoResponse {
-    ...
-    ws.on_upgrade(move |socket| handle_socket(socket, addr))   // upgrade 成功后交给 handle_socket
-}
-````
-
-`ws.on_upgrade(closure)` 表示 upgrade 成功后把 `WebSocket` 交给 `handle_socket`。
-
-### `ConnectInfo` 要开 `into_make_service_with_connect_info`
-
-````rust
-axum::serve(
-    listener,
-    app.into_make_service_with_connect_info::<SocketAddr>(),
-)
-````
-
-不用 `into_make_service_with_connect_info`,`ConnectInfo(addr): ConnectInfo<SocketAddr>` extractor 拿不到客户端地址。
-
-### 每个连接一个 `handle_socket`
-
-每个 WebSocket 客户端都有自己的 `handle_socket` 任务。一个客户端 sleep 或等消息不阻塞其他客户端——async server 的基本并发模型:每个连接各自推进自己的 future,Tokio 负责调度。
-
-### 消息类型
-
-````rust
-fn process_message(msg: Message, who: SocketAddr) -> ControlFlow<(), ()> {
-    match msg {
-        Message::Text(t) => ...,
-        Message::Binary(d) => ...,
-        Message::Close(_) => return ControlFlow::Break(()),   // Close 应退出读取循环
-        Message::Pong(v) => ...,
-        Message::Ping(v) => ...,
-    }
-    ControlFlow::Continue(())
-}
-````
-
-`ControlFlow::Break` 表示应结束当前连接处理。收到 Close 继续处理通常没意义。
-
-### `split` + 并发收发
-
-````rust
-let (mut sender, mut receiver) = socket.split();
-
-let mut send_task = tokio::spawn(async move { /* 一个任务发 */ });
-let mut recv_task = tokio::spawn(async move { /* 一个任务收 */ });
-
-tokio::select! {
-    _ = (&mut send_task) => recv_task.abort(),   // 任意一边结束就停另一边
-    _ = (&mut recv_task) => send_task.abort(),
-}
-````
-
-split 后 sender 负责发、receiver 负责收,可同时做两件事(后台任务不断发,另一个不断读),比单循环里一会儿发一会儿收更灵活。WebSocket 发送或接收任意一侧结束通常意味着连接生命周期该收尾,`tokio::select!` 谁先结束就 abort 另一个。
-
-### Ping/Pong 心跳
-
-WebSocket 协议中 Ping/Pong 常用于心跳和连接检测。本例只在连接建立时发了一个 Ping。
-
-## ⚠️ 生产级 WebSocket 必做:心跳与超时
-
-本示例没任何周期性心跳和超时,教学没问题,但生产会引发**半开连接泄漏**——生产 WebSocket 服务的头号问题。
-
-### 什么是半开连接
-
-```text
-客户端断网(手机切电梯、电脑休眠)
-  → TCP 层可能没正常发 FIN 关闭
-  → 服务端 socket 还"活着"以为连接正常
-  → 服务端一直 await receiver.next() 永远等不到消息
-  → 连接、内存、任务句柄全部泄漏
-```
-
-TCP 默认 keep-alive 探测间隔通常以小时计,等它发现连接已死要很久。应用层必须自己做心跳。
-
-### 标准做法:周期性 Ping + recv 超时
-
-1. **周期性发 Ping**(如每 30 秒):客户端会自动回 Pong。对端已死时发 Ping 会失败。
-2. **给 recv 加超时**:用 `tokio::time::timeout` 包住 `receiver.next()`,一段时间内既没消息也没 Pong 就认定连接已死主动关闭。
-
-````rust
-let mut send_interval = tokio::time::interval(Duration::from_secs(30));
-loop {
-    tokio::select! {
-        _ = send_interval.tick() => {
-            if sender.send(Message::Ping(Bytes::new())).await.is_err() {
-                break;   // 发送失败,对端已断开
-            }
-        }
-        msg = tokio::time::timeout(Duration::from_secs(60), receiver.next()) => {
-            match msg {
-                Ok(Some(Ok(message))) => { /* 处理消息 */ }
-                _ => break,   // 超时或错误,关闭连接
-            }
-        }
-    }
-}
-````
-
-> 本示例 handler 里 `socket` 在 `tokio::select!` 中被移动,依赖 WebSocket 操作的 **cancel-safety**(第 44 章测试会讲——`WebSocket::recv` 和 `broadcast::Receiver::recv` 都 cancel-safe,可安全用在 select!)。
-
-记住这条工程经验:**写 WebSocket 不加心跳和超时,上线后一定会被半开连接拖垮。** 这比 handler 业务逻辑重要得多。
-
-## 常见问题
-
-**WebSocket 和 SSE 最大区别?** SSE 单向推送,WebSocket 双向通信。
-
-**为什么要 split?** split 后可一个任务发一个任务收,适合实时双向通信;不 split 发送和接收通常在同一流程里。
-
-**收到 Close 为什么 break?** Close 表示对方想关连接,继续处理没意义,结束连接状态机。
-
-**为什么用 ConnectInfo?** 让 handler 拿到客户端 SocketAddr,对日志/审计/调试有用。必须配 `into_make_service_with_connect_info`。
+标准做法：周期性发 Ping（如每 30 秒）+ 给 recv 加超时（60 秒收不到消息就断）。详见手写任务。
 
 ## 手写任务
 
 1. 写 `/ws` 只完成 `WebSocketUpgrade`。
 2. 写 `handle_socket` 连接后发一条文本。
 3. 接收一条客户端消息并打印。
-4. 加 `socket.split()`。
-5. 用两个任务分别发送和接收。
-6. 浏览器 `new WebSocket(...)` 验证。
+4. 加 `socket.split()`，用两个任务分别发送和接收。
+5. 浏览器 `new WebSocket(...)` 验证。
+6. **（进阶）**加周期性 Ping + recv 超时防半开连接。
 
 ## 小结
 
-- WebSocket 在 axum 分两步:`WebSocketUpgrade` 处理 HTTP upgrade,`WebSocket` 处理 upgrade 后的双向消息流。
-- `ConnectInfo` 要配 `into_make_service_with_connect_info` 才能拿到客户端地址。
-- 连接内核心模式:`send`/`recv` → `split` → `tokio::spawn`(一个任务发一个任务收)→ `tokio::select!`(谁先结束 abort 另一个)→ Close 后结束。
-- WebSocket vs SSE:双向实时用 WebSocket,单向推送用 SSE。
-- **生产 WebSocket 必加周期性 Ping + recv 超时**,否则半开连接泄漏会拖垮服务。
+这章分 4 止从零搭了 WebSocket 服务：
+
+1. **HTTP upgrade**：`WebSocketUpgrade` + `on_upgrade` 完成 HTTP→WebSocket 切换，`ConnectInfo` 提取客户端 IP。
+2. **消息收发**：`Message` 有 5 种类型（Text/Binary/Close/Ping/Pong），`socket.recv()`/`socket.send()` 收发。
+3. **split + 并发**：`socket.split()` 拆成 sender/receiver，两个 `tokio::spawn` 同时收发，`tokio::select!` 谁先结束 abort 另一个。
+
+WebSocket vs SSE：双向实时用 WebSocket，单向推送用 SSE。
 
 ## 源码对照
 
