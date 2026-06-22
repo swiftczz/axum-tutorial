@@ -2,6 +2,10 @@
 
 对应示例：`examples/low-level-openssl`
 
+**前置**：第 53 章（low-level TLS 骨架）
+
+> ch53-55 三章骨架完全相同，只换 TLS backend。选型对比见[第 53 章 "Low-level TLS backend 选型"](./53-low-level-rustls.md#low-level-tls-backend-选型)。本章用 openssl（直接绑 OpenSSL C 库），适合需要 OpenSSL 特定功能（如 OCSP stapling、特定 cipher 控制）的场景。
+
 第 53 章 rustls、第 54 章 native-tls 之后，这章用 **OpenSSL 直接版本**——`openssl` crate 直接绑定 OpenSSL C 库，比 native-tls 暴露更多底层 API。代码骨架还是和 ch53 一样，只是 TLS 库换。
 
 分 2 步：先建 `SslAcceptor`（mozilla_modern_v5 预设），再写手动 TCP+TLS 循环。

@@ -2,6 +2,8 @@
 
 对应示例：`examples/tls-graceful-shutdown`
 
+**前置**：第 45 章（graceful shutdown）、第 46 章（TLS rustls）
+
 把第 45 章 graceful shutdown 和第 46 章 TLS rustls 合在一起。启动 HTTPS + HTTP 重定向两个服务，理解 `axum_server::Handle` 和 `with_graceful_shutdown` 分别如何关闭两个服务，同一个终止信号同时影响两者。
 
 分 3 步：先启动带 Handle 的 HTTPS server，再加 HTTP→HTTPS 重定向服务，最后用共享 shutdown future 同时关闭两者。

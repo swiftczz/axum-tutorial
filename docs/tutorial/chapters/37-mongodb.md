@@ -2,6 +2,8 @@
 
 对应示例：`examples/mongodb`
 
+> 数据库方案全景见[第 32 章选型表](./32-sqlx-postgres.md#先理解5-个数据库方案怎么选)。前面 ch32-36 讲的是 PostgreSQL/Redis，这章换文档型 NoSQL。
+
 前面几章数据库都是 PostgreSQL/Redis。这章换 **MongoDB**——文档型 NoSQL 数据库，存 JSON-like 文档（BSON）。和 SQL 数据库最大区别：无表结构约束、查询用 `doc! { ... }` 而非 SQL、Rust 端 model 直接 serde 到文档。
 
 实现一个 members 的 CRUD（Create/Read/Update/Delete），掌握 MongoDB 的 `Client`/`Collection`、`doc!` 查询、`Collection<Member>` 作为 State 的模式。

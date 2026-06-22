@@ -2,6 +2,10 @@
 
 对应示例：`examples/low-level-native-tls`
 
+**前置**：第 53 章（low-level TLS 骨架）
+
+> ch53-55 三章骨架完全相同，只换 TLS backend。选型对比见[第 53 章 "Low-level TLS backend 选型"](./53-low-level-rustls.md#low-level-tls-backend-选型)。本章用 native-tls（系统 OpenSSL/SChannel），适合 FIPS 合规或需要系统证书的场景。
+
 第 53 章用 rustls 做 low-level HTTPS server。这章换 **native-tls** backend——用**操作系统自带的 TLS 实现**（Linux/macOS 用 OpenSSL，Windows 用 SChannel）。代码骨架和 ch53 完全一样，只换 TLS 库。
 
 分 2 步：先建 native-tls `TlsAcceptor`（Identity 方式配置），再写手动 TCP+TLS 循环（同 ch53）。

@@ -2,6 +2,8 @@
 
 对应示例：`examples/websockets-http2`
 
+**前置**：第 41 章（WebSocket 基础）、第 46 章（HTTPS / TLS rustls）
+
 第 41 章 WebSocket 走 HTTP/1.1 upgrade 机制（`Connection: Upgrade, Upgrade: websocket`）。HTTP/2 不支持 upgrade，改用 **RFC 8441 Extended CONNECT**——HTTP/2 上的 WebSocket。这章演示怎么启用并写一个简单的广播聊天 server。
 
 分 2 步：先启动支持 HTTP/2 WebSocket 的 HTTPS server + 静态文件 + broadcast channel，再写 ws_handler 处理双向消息。

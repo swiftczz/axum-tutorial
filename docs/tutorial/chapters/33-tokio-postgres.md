@@ -2,7 +2,9 @@
 
 对应示例：`examples/tokio-postgres`
 
-这章是第一个数据库章节，用最底层的 `tokio-postgres`——纯异步 PostgreSQL 客户端，没有 ORM、没有 DSL，直接写 SQL 字符串。理解它就理解了所有 PG 客户端的骨架：**连接池 + 查询 + 错误处理**。
+> 5 个数据库方案的对比见[第 32 章"先理解：5 个数据库方案怎么选"](./32-sqlx-postgres.md#先理解5-个数据库方案怎么选)。本章是最底层的 PG 客户端。
+
+ch32 用了 SQLx，这章换最底层的 `tokio-postgres`——纯异步 PostgreSQL 客户端，没有 ORM、没有 DSL，直接写 SQL 字符串。理解它就理解了所有 PG 客户端的骨架：**连接池 + 查询 + 错误处理**。
 
 本章演示**两种**获取连接的写法：直接 `State<Pool>` 和自定义 `DatabaseConnection` extractor。两种都合法，看团队偏好。
 

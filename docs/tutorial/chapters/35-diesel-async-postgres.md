@@ -2,6 +2,8 @@
 
 对应示例：`examples/diesel-async-postgres`
 
+> 5 个数据库方案的对比见[第 32 章"先理解：5 个数据库方案怎么选"](./32-sqlx-postgres.md#先理解5-个数据库方案怎么选)。本章是异步 Diesel（diesel-async）的写法，相比 ch34 同步版查询直接 `.await`，不需要 `interact` 包装。
+
 上一章用 Diesel 同步查询需 `deadpool-diesel` 的 `interact` 把同步查询扔进阻塞线程池。这章换 `diesel-async`——查询本身是异步的，可以直接 `.await`，不需要 `interact` 包装。
 
 分 4 步：先建 schema/model 和连接池，再加 migration，再加 `create_user`（用 `State<Pool>`），最后加 `list_users`（用自定义 `DatabaseConnection` extractor 演示另一种获取连接的写法）。

@@ -2,7 +2,23 @@
 
 对应示例：`examples/low-level-rustls`
 
+**前置**：第 46 章（`axum-server::bind_rustls` high-level TLS）、第 49 章（手动 hyper serve）
+
 第 46 章用 `axum-server::bind_rustls` 一行启动 HTTPS server，那是 high-level API。这章走 **low-level** 路径：**手动接管 TCP listener → 在每条连接上做 TLS 握手 → 把 TLS 流交给 hyper 服务**。理解这层就理解了 axum server 内部到底是怎么跑的。
+
+## Low-level TLS backend 选型
+
+ch53-55 三章代码骨架完全相同（手动 TCP + TLS 握手 + hyper），只换 TLS backend：
+
+| 章节 | backend | 实现 | 优点 | 缺点 | 适合 |
+| --- | --- | --- | --- | --- | --- |
+| **ch53**（本章） | rustls | 纯 Rust | 无 C 依赖、内存安全、编译简单 | 算法集比 OpenSSL 少 | **新项目默认** |
+| [ch54](./54-low-level-native-tls.md) | native-tls | 系统自带（OpenSSL/SChannel） | 兼容性好、FIPS 合规、系统证书 | C 依赖、平台差异 | FIPS / 系统证书场景 |
+| [ch55](./55-low-level-openssl.md) | openssl | 直接绑 OpenSSL C | API 最全、特定 cipher 控制 | C 依赖最重、要 Pin | 需要特定 OpenSSL 功能 |
+
+**怎么选**：99% 场景用本章 rustls；必须 FIPS/系统证书用 ch54；需要 OpenSSL 特定功能（如 OCSP stapling）用 ch55。
+
+> 建议先读本章（最简单的 TLS backend），ch54/55 只看差异部分。
 
 分 3 步：先建 rustls 配置（证书/私钥），再写手动 TLS listener 循环（核心难点），最后用 hyper 的 `serve_connection_with_upgrades` 服务单条连接。
 

@@ -2,7 +2,9 @@
 
 对应示例：`examples/tokio-redis`
 
-前面几章数据库都是 PG/MongoDB 这类持久存储。这章用 **Redis**——内存键值存储，速度极快（μs 级），常用作缓存、session、排行榜、pub/sub。
+> 数据库方案全景见[第 32 章选型表](./32-sqlx-postgres.md#先理解5-个数据库方案怎么选)。前面 ch32-35 讲的是 PostgreSQL，这章开始换存储类型。
+
+前面几章数据库都是 PG。这章用 **Redis**——内存键值存储，速度极快（μs 级），常用作缓存、session、排行榜、pub/sub。
 
 结构和 ch33 tokio-postgres 几乎一样：bb8 连接池 + State，外加自定义 extractor 写法。区别只是 client 换成 `redis::Client`，操作换成 `get`/`set`。
 

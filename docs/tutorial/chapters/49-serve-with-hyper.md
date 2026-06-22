@@ -2,6 +2,8 @@
 
 对应示例：`examples/serve-with-hyper`
 
+**前置**：建议先了解 [附录 A0 Tower 基础](./a0-tower-fundamentals.md)（Service / Layer 抽象）
+
 `axum::serve(listener, app)` 一行启动 server——但有时候需要更多控制（自定义握手、连接级 middleware、特殊协议）。这章演示**手动用 hyper 启动**，理解 axum server 内部到底跑了什么。
 
 分 3 步：先用 hyper 服务最简连接（不用 ConnectInfo），再加 ConnectInfo 拿到 remote_addr，最后对比两种用法的差异。

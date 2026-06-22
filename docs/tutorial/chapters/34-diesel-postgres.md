@@ -2,6 +2,8 @@
 
 对应示例：`examples/diesel-postgres`
 
+> 5 个数据库方案的对比见[第 32 章"先理解：5 个数据库方案怎么选"](./32-sqlx-postgres.md#先理解5-个数据库方案怎么选)。本章是同步 Diesel + deadpool-diesel 的写法。
+
 前两章用异步 PostgreSQL 客户端，这章用 Diesel。Diesel 的查询 API 是**同步阻塞风格**，所以用 `deadpool-diesel` 把它接入 axum 异步服务——核心是通过 `conn.interact(...)` 把同步查询扔到阻塞线程池执行。用 Diesel + PostgreSQL 实现用户创建与列表查询。
 
 分 4 步：先建 schema/model + 连接池，再加 migration，再加 `create_user`（理解 `interact`），最后加 `list_users`。
