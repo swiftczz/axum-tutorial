@@ -2,7 +2,11 @@
 
 对应示例：`examples/customize-path-rejection`
 
-上一章自定义 `Json<T>` 解析失败的错误,这一章自定义 `Path<T>` 解析失败的错误。把 axum 默认的 `PathRejection` 转成更适合 API 的 JSON 错误,告诉客户端具体哪个路径参数错了。
+上一章自定义 `Json<T>` 解析失败的错误，这一章自定义 `Path<T>` 解析失败的错误。把 axum 默认的 `PathRejection` 转成更适合 API 的 JSON 错误，告诉客户端**具体哪个路径参数错了**。
+
+相比上一章新引入：`FromRequestParts`（只读 parts 不读 body 的 extractor）、`ErrorKind`（路径参数错误分类）、`DeserializeOwned`。
+
+分 3 步搭。
 
 ## Cargo.toml
 
@@ -23,7 +27,127 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+---
+
+## 第一步：最小路由和 Params 结构体
+
+先写一个带路径参数的路由：`GET /users/{user_id}/teams/{team_id}`。
+
+````rust
+use axum::{routing::get, Router};
+use serde::{Deserialize, Serialize};
+
+#[tokio::main]
+async fn main() {
+    let app = Router::new()
+        .route("/users/{user_id}/teams/{team_id}", get(handler));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+        .await.unwrap();
+    axum::serve(listener, app).await;
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Params {
+    user_id: u32,
+    team_id: u32,
+}
+
+async fn handler(Path(params): Path<Params>) -> impl IntoResponse {
+    axum::Json(params)
+}
+````
+
+用 axum 默认的 `Path<T>`，访问 `/users/1/teams/2` 返回 `{"user_id":1,"team_id":2}`。但访问 `/users/abc/teams/2` 时，`abc` 无法解析成 `u32`，默认返回一个不太友好的错误。
+
+> **新面孔：路径参数解析**
+>
+> URL 里的内容一开始都是字符串。路由 `{user_id}` 匹配到 `"1"` 后，如果 struct 要求 `u32`，axum 做 `"1" → 1u32` 转换。转换失败产生 `PathRejection`。
+>
+> 字段名要和路由参数名对应：`{user_id}` ↔ `user_id: u32`。
+
+---
+
+## 第二步：自定义 Path extractor + PathError
+
+现在自定义 `Path<T>` extractor，失败时返回带 `location` 字段的 JSON 错误（告诉客户端哪个参数错了）。
+
+````rust
+use axum::{
+    extract::{path::ErrorKind, rejection::PathRejection, FromRequestParts},
+    http::{request::Parts, StatusCode},
+    response::IntoResponse,
+};
+
+// 自定义 Path 包装器
+struct Path<T>(T);
+
+impl<S, T> FromRequestParts<S> for Path<T>
+where
+    T: DeserializeOwned + Send,
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, axum::Json<PathError>);
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        match axum::extract::Path::<T>::from_request_parts(parts, state).await {
+            Ok(value) => Ok(Self(value.0)),
+            Err(rejection) => { /* 转换成 PathError */ }
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct PathError {
+    message: String,
+    location: Option<String>,  // 告诉客户端哪个参数错了
+}
+````
+
+> **新面孔：`FromRequestParts`**
+>
+> 和上一章的 `FromRequest` 不同，`FromRequestParts` **只读 parts**（method、uri、headers、路径参数），**不消费 body**。路径参数来自 URL，不需要读 body，所以用 `FromRequestParts`。
+>
+> 复用 `axum::extract::Path::<T>::from_request_parts` 做实际解析，只定制失败时的响应。
+
+---
+
+## 第三步：ErrorKind 分类——区分 400 和 500
+
+`PathRejection` 里的错误分多种类型（`ErrorKind`），不同类型应该返回不同状态码：
+
+````rust
+PathRejection::FailedToDeserializePathParams(inner) => {
+    let mut status = StatusCode::BAD_REQUEST;
+    let kind = inner.into_kind();
+    let body = match &kind {
+        // 某个具名参数解析失败，如 user_id
+        ErrorKind::ParseErrorAtKey { key, .. } => PathError {
+            message: kind.to_string(),
+            location: Some(key.clone()),
+        },
+        // 程序员用了不支持的类型 → 服务端错误
+        ErrorKind::UnsupportedType { .. } => {
+            status = StatusCode::INTERNAL_SERVER_ERROR;
+            PathError { message: kind.to_string(), location: None }
+        }
+        // 其他错误类型...
+    };
+    (status, axum::Json(body))
+}
+````
+
+> **新面孔：`ErrorKind`**
+>
+> `ErrorKind` 把路径参数错误分类：`ParseErrorAtKey`（某个参数解析失败，能拿到 key 名）、`ParseErrorAtIndex`（按位置失败）、`InvalidUtf8`（非 UTF8）、`UnsupportedType`（程序员用了不支持的类型）等。
+>
+> `ParseErrorAtKey { key }` 最常见——`key` 就是出错的参数名（如 `"user_id"`），把它放进 `location` 字段让客户端知道改哪个参数。
+>
+> `UnsupportedType` 是程序员写法错（不是用户输入错），返回 500。
+
+---
+
+## 完整代码
 
 ````rust
 use axum::{
@@ -51,10 +175,8 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
         .unwrap();
-
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-
-    axum::serve(listener, app).await;
+    axum::serve(listener, app).await.unwrap();
 }
 
 async fn handler(Path(params): Path<Params>) -> impl IntoResponse {
@@ -159,118 +281,35 @@ cd examples
 cargo run -p example-customize-path-rejection
 ````
 
-合法路径:
+合法路径：
 
 ````bash
-curl -i http://127.0.0.1:3000/users/1/teams/2
-# 预期: {"user_id":1,"team_id":2}
+curl http://127.0.0.1:3000/users/1/teams/2
+# {"user_id":1,"team_id":2}
 ````
 
-非法 `user_id`:
+非法 `user_id`：
 
 ````bash
 curl -i http://127.0.0.1:3000/users/abc/teams/2
+# 400 {"message":"...","location":"user_id"}
 ````
-
-预期 `400 Bad Request`,响应:
-
-````json
-{
-  "message": "...",
-  "location": "user_id"
-}
-````
-
-非法 `team_id`:
-
-````bash
-curl -i http://127.0.0.1:3000/users/1/teams/abc
-# 预期 location 指向 team_id
-````
-
-## 解读
-
-### 路径参数解析
-
-路由 `/users/{user_id}/teams/{team_id}` 定义两个路径变量。URL 里的内容一开始都是字符串,如果 struct 要求 `u32`,axum 就要做转换:
-
-```text
-"1"   -> 1u32     成功
-"abc" -> ?        转换失败 → PathRejection
-```
-
-字段名要和路由参数名对应:`{user_id}` ↔ `user_id: u32`,`{team_id}` ↔ `team_id: u32`。
-
-### 自定义 `Path<T>` 包装器
-
-````rust
-struct Path<T>(T);
-
-impl<S, T> FromRequestParts<S> for Path<T>
-where
-    T: DeserializeOwned + Send,
-    S: Send + Sync,
-{
-    type Rejection = (StatusCode, axum::Json<PathError>);
-
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        match axum::extract::Path::<T>::from_request_parts(parts, state).await {
-            Ok(value) => Ok(Self(value.0)),
-            Err(rejection) => { ... }
-        }
-    }
-}
-````
-
-没有重写路径解析逻辑,只是复用 `axum::extract::Path<T>`,定制失败时的响应。handler 里的 `Path` 是这个自定义类型,不是 `axum::extract::Path`。
-
-### 为什么用 `FromRequestParts` 而不是 `FromRequest`
-
-路径参数来自请求的 parts,不需要读 body。对照表:
-
-| 要提取什么 | trait |
-| --- | --- |
-| path、query、header、method 等不读 body 的 | `FromRequestParts` |
-| JSON、Form、Bytes 等消费 body 的 | `FromRequest` |
-
-上一章读 JSON body 用 `FromRequest`,这章读路径参数用 `FromRequestParts`。
-
-### `PathError` 带 `location`
-
-````rust
-#[derive(Serialize)]
-struct PathError {
-    message: String,
-    location: Option<String>,
-}
-````
-
-`location` 标识错误发生在哪个参数上,例如 `user_id`。这让前端更容易定位哪个参数错了。最常见的 `ErrorKind::ParseErrorAtKey { key, .. }` 表示"某个具名路径参数解析失败",把 `key` 塞进 `location`。
-
-### 区分 400 和 500
-
-| 错误来源 | 状态码 |
-| --- | --- |
-| 客户端传了无法解析的路径参数 | 400 |
-| 服务端代码用了不支持的参数类型(`UnsupportedType`) | 500 |
-
-用户输入错是 400,程序员写法错(比如路径参数类型用错)是 500。这个区分很重要。
 
 ## 手写任务
 
-跑通后做三个小改动:
-
-1. 把 `team_id` 类型从 `u32` 改成 `String`,观察 `/teams/abc` 是否还能成功。
-2. 给 `PathError` 加 `code: String` 字段,例如 `INVALID_PATH_PARAM`。
-3. 增加路由 `/users/{user_id}`,复用同一个自定义 `Path<T>`。
+1. 把 `team_id` 类型从 `u32` 改成 `String`，观察 `/teams/abc` 是否成功。
+2. 给 `PathError` 加 `code` 字段。
+3. 新增路由 `/users/{user_id}`，复用同一个 `Path<T>`。
 
 ## 小结
 
-- `Path<T>` 把 URL 路径参数解析成 Rust 类型,失败产生 `PathRejection`。
-- 自定义路径 extractor 可以复用 `axum::extract::Path<T>`,只改错误响应。
-- 不读 body 的 extractor 实现 `FromRequestParts`;读 body 的实现 `FromRequest`。
-- 错误响应里带 `location` 能帮客户端定位哪个参数错了。
-- 用户输入错通常 400,服务端类型用错通常 500。
+这章分 3 步自定义了路径参数错误：
+
+1. **最小路由**：`{user_id}` 路径参数 + `Params` 结构体，字段名对应。
+2. **自定义 Path extractor**：`FromRequestParts`（只读 parts 不读 body），复用 `axum::extract::Path`，定制失败响应。
+3. **ErrorKind 分类**：`ParseErrorAtKey` 提取 key 名放进 `location`；`UnsupportedType` 返回 500。
+
+和上一章（ch11）的区别：ch11 自定义 `Json<T>` 用 `FromRequest`（消费 body），这章自定义 `Path<T>` 用 `FromRequestParts`（只读 parts）。
 
 ## 源码对照
 
