@@ -2,11 +2,11 @@
 
 对应示例：`examples/websockets-http2`
 
-上一章是普通 WebSocket,这章重点不是聊天业务,而是 **WebSocket over HTTP/2**:学会用 `axum-server` + rustls 启动 HTTPS 服务,启用 HTTP/2 CONNECT protocol。
+第 41 章 WebSocket 走 HTTP/1.1 upgrade 机制（`Connection: Upgrade, Upgrade: websocket`）。HTTP/2 不支持 upgrade，改用 **RFC 8441 Extended CONNECT**——HTTP/2 上的 WebSocket。这章演示怎么启用并写一个简单的广播聊天 server。
 
+分 2 步：先启动支持 HTTP/2 WebSocket 的 HTTPS server + 静态文件 + broadcast channel，再写 ws_handler 处理双向消息。
 
-
-相比前面章节新引入：**HTTP/2 WebSocket、`enable_connect_protocol`、ALPN 协商**。
+相比前面章节新引入：**`http_builder().http2().enable_connect_protocol()`（HTTP/2 Extended CONNECT）、`broadcast::channel` 广播、`tokio::select!` 并发读 socket 和 broadcast**。
 
 ## Cargo.toml
 
@@ -18,24 +18,175 @@ edition = "2024"
 publish = false
 
 [dependencies]
-axum = { version = "0.8", features = ["ws", "http2"] }
+axum = { version = "0.8", features = ["ws"] }
 axum-server = { version = "0.8", features = ["tls-rustls"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1.0", features = ["full"] }
 tower-http = { version = "0.6", features = ["fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
-axum 启用 `ws` + `http2` feature;`axum-server` 启用 `tls-rustls`。
-
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## 关键概念
+---
 
-> **新面孔：HTTP/2 WebSocket + `enable_connect_protocol`**
+## 第一步：HTTPS server + broadcast channel + 启用 HTTP/2 Extended CONNECT
+
+这步搭骨架。关键差异：必须显式 `enable_connect_protocol()`，否则浏览器在 HTTP/2 上发起 WebSocket 会失败。broadcast channel 用于所有连接共享消息（聊天室效果）。
+
+````rust
+use axum::{
+    extract::{ws::WebSocketUpgrade, State},
+    routing::any,
+    Router,
+};
+use axum_server::tls_rustls::RustlsConfig;
+use std::{net::SocketAddr, path::PathBuf};
+use tokio::sync::broadcast;
+use tower_http::services::ServeDir;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| format!("{}=debug", env!("CARGO_CRATE_NAME")).into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let assets_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
+
+    // 证书（参考第 46 章）
+    let config = RustlsConfig::from_pem_file(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("self_signed_certs").join("cert.pem"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("self_signed_certs").join("key.pem"),
+    )
+    .await
+    .unwrap();
+
+    // broadcast channel：所有连接共享，发一条大家都能收到
+    let app = Router::new()
+        .fallback_service(ServeDir::new(assets_dir).append_index_html_on_directories(true))
+        .route("/ws", any(ws_handler))
+        .with_state(broadcast::channel::<String>(16).0);
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    tracing::debug!("listening on {}", addr);
+
+    let mut server = axum_server::bind_rustls(addr, config);
+
+    // 关键：启用 HTTP/2 Extended CONNECT，让 HTTP/2 上能跑 WebSocket
+    // axum::serve 默认启用，但 axum_server 要手动
+    server.http_builder().http2().enable_connect_protocol();
+
+    server.serve(app.into_make_service()).await.unwrap();
+}
+
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    version: axum::http::Version,
+    State(sender): State<broadcast::Sender<String>>,
+) -> axum::response::Response {
+    tracing::debug!("accepted a WebSocket using {version:?}");
+    let mut receiver = sender.subscribe();
+    ws.on_upgrade(|mut ws| async move {
+        // 下一步填这里
+    })
+}
+````
+
+验证（用 examples 自带的 `assets/index.html` 前端，里面会自动连 `/ws`）：
+
+````bash
+cd examples
+cargo run -p example-websockets-http2
+````
+
+浏览器访问 `https://localhost:3000/`（忽略证书警告），开两个标签页，在 console 看到 `accepted a WebSocket using Http2` 就说明走的是 HTTP/2 WebSocket。
+
+> **新面孔：`enable_connect_protocol`（HTTP/2 Extended CONNECT）**
 >
-> HTTP/2 WebSocket 使用扩展 CONNECT 机制。`axum_server::bind_rustls` 需手动启用 `enable_connect_protocol`（`axum::serve` 默认启用）。ALPN 协商 h2/http1.1。
+> HTTP/1.1 用 `Connection: Upgrade` 切换协议。HTTP/2 不支持 upgrade，需要 RFC 8441 的 Extended CONNECT method——通过 `:protocol` pseudo-header 协商。
+>
+> `axum::serve` 默认启用它；但 `axum_server` 不启用，必须手动 `server.http_builder().http2().enable_connect_protocol()`。
+>
+> 不启用的话浏览器在 HTTP/2 连接上发起 WebSocket 会失败。
 
+> **新面孔：`broadcast::channel`**
+>
+> tokio 的广播 channel：一个发送者 `.send()` → 所有订阅者 `.subscribe().recv()` 都收到。这章用来做聊天室——所有 WebSocket 连接共享一个 channel，发一条广播给所有人。
+>
+> `broadcast::channel::<String>(16)` 的 16 是 channel 容量。容量满了新消息会挤掉旧的（latency 比 completeness 重要的场景适用）。
+
+> **新面孔：`any` 路由方法**
+>
+> WebSocket 路由用 `any` 不是 `get`——因为 WebSocket 握手虽然通常是 GET，但严格来说 HTTP/2 Extended CONNECT 用的是 CONNECT 方法。`any` 接受所有方法。
+
+---
+
+## 第二步：ws_handler 用 `tokio::select!` 并发处理双向消息
+
+WebSocket handler 要同时做两件事：**从 socket 读消息广播出去** + **从 broadcast 收消息发回 socket**。用 `tokio::select!` 并发两个 future。
+
+````rust
+use axum::extract::ws;
+
+# async fn ws_handler(
+#     ws: WebSocketUpgrade,
+#     version: axum::http::Version,
+#     State(sender): State<broadcast::Sender<String>>,
+# ) -> axum::response::Response {
+#     let mut receiver = sender.subscribe();
+    ws.on_upgrade(|mut ws| async move {
+        loop {
+            tokio::select! {
+                // 从 socket 读消息（客户端 → 服务端），广播给所有订阅者
+                res = ws.recv() => {
+                    match res {
+                        Some(Ok(ws::Message::Text(s))) => {
+                            let _ = sender.send(s.to_string());
+                        }
+                        Some(Ok(_)) => {}
+                        Some(Err(e)) => tracing::debug!("client disconnected abruptly: {e}"),
+                        None => break,
+                    }
+                }
+                // 从 broadcast 读消息（其他客户端发的），发回这个 socket
+                res = receiver.recv() => {
+                    match res {
+                        Ok(msg) => if let Err(e) = ws.send(ws::Message::Text(msg.into())).await {
+                            tracing::debug!("client disconnected abruptly: {e}");
+                        }
+                        Err(_) => continue,
+                    }
+                }
+            }
+        }
+    })
+# }
+````
+
+> **新面孔：`tokio::select!` 多路复用**
+>
+> `select!` 同时等多个 future，先 ready 的那个分支执行，其他取消。这章两个分支：
+>
+> - `ws.recv()`：等客户端发消息（输入方向）
+> - `receiver.recv()`：等 broadcast 推消息（输出方向）
+>
+> select! 在每轮 `loop` 都跑一次——双向消息独立到达，互不阻塞。
+
+> **新面孔：cancel safety**
+>
+> `tokio::select!` 每轮会取消未完成的分支。如果分支的 future 不是 cancel-safe，可能丢数据。源码注释强调：
+>
+> - `ws.recv()` 是 cancel-safe（axum 文档保证）
+> - `broadcast::Receiver::recv()` 是 cancel-safe（tokio 保证）
+>
+> 如果换成 `tokio::mpsc::Receiver::recv()` 也要确认 cancel safety。
+
+---
 
 ## 完整代码
 
@@ -67,13 +218,19 @@ async fn main() {
 
     let assets_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
 
+    // configure certificate and private key used by https
     let config = RustlsConfig::from_pem_file(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("self_signed_certs").join("cert.pem"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("self_signed_certs").join("key.pem"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("self_signed_certs")
+            .join("cert.pem"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("self_signed_certs")
+            .join("key.pem"),
     )
     .await
     .unwrap();
 
+    // build our application with some routes and a broadcast channel
     let app = Router::new()
         .fallback_service(ServeDir::new(assets_dir).append_index_html_on_directories(true))
         .route("/ws", any(ws_handler))
@@ -84,6 +241,8 @@ async fn main() {
 
     let mut server = axum_server::bind_rustls(addr, config);
 
+    // IMPORTANT: This is required to advertise our support for HTTP/2 websockets to the client.
+    // If you use axum::serve, it is enabled by default.
     server.http_builder().http2().enable_connect_protocol();
 
     server.serve(app.into_make_service()).await.unwrap();
@@ -95,12 +254,11 @@ async fn ws_handler(
     State(sender): State<broadcast::Sender<String>>,
 ) -> axum::response::Response {
     tracing::debug!("accepted a WebSocket using {version:?}");
-
     let mut receiver = sender.subscribe();
-
     ws.on_upgrade(|mut ws| async move {
         loop {
             tokio::select! {
+                // Since `ws` is a `Stream`, it is by nature cancel-safe.
                 res = ws.recv() => {
                     match res {
                         Some(Ok(ws::Message::Text(s))) => {
@@ -111,6 +269,7 @@ async fn ws_handler(
                         None => break,
                     }
                 }
+                // Tokio guarantees that `broadcast::Receiver::recv` is cancel-safe.
                 res = receiver.recv() => {
                     match res {
                         Ok(msg) => if let Err(e) = ws.send(ws::Message::Text(msg.into())).await {
@@ -132,105 +291,59 @@ cd examples
 cargo run -p example-websockets-http2
 ````
 
-浏览器打开 `https://localhost:3000/`(注意 `https`)。证书不可信需手动信任本地自签名证书或重新生成开发证书。打开两个窗口互相发消息,终端日志关注 `accepted a WebSocket using HTTP/2`(或 HTTP/1.1)。
+浏览器访问 `https://localhost:3000/`（用 `-k` 忽略证书警告的浏览器需要先 `thisisunsafe` 或类似机制），打开两个标签页，在输入框发消息——两个标签都能看到。打开浏览器 dev tools 看 Network → ws 请求，`Request Headers` 里有 `:protocol: websocket`，`Version` 是 `h2`。
 
 ## 解读
 
-### 和普通 WebSocket 的差异
+### HTTP/1.1 vs HTTP/2 WebSocket
+
+| 维度 | HTTP/1.1 upgrade（ch41） | HTTP/2 Extended CONNECT（这章） |
+| --- | --- | --- |
+| 协议机制 | `Connection: Upgrade` + `Upgrade: websocket` | `:method: CONNECT` + `:protocol: websocket` |
+| 标准化 | RFC 6455 | RFC 8441 |
+| 多路复用 | 一条 TCP 一个 WebSocket | 多个 WebSocket 共享一条 HTTP/2 连接 |
+| 启用 | 默认 | 显式 `enable_connect_protocol()` |
+
+HTTP/2 WebSocket 好处：一条 TCP/TLS 连接可跑多个 WebSocket（HTTP/2 多路复用），少握手开销。
+
+### 聊天室架构
 
 ```text
-普通示例:  ws://localhost:3000/ws          axum::serve(listener, app)
-本章示例:  wss://localhost:3000/ws         axum_server::bind_rustls + enable_connect_protocol
+client A  ──┐
+client B  ──┼──>  broadcast::Sender  ──>  所有 Receiver
+client C  ──┘                                ↑
+                                         每个 ws_handler subscribe 一个
 ```
 
-多出来:TLS 配置 + HTTP/2 CONNECT protocol。前端用 `wss://`(基于 TLS 的 WebSocket)。
-
-### 加载自签名证书
-
-````rust
-let config = RustlsConfig::from_pem_file(cert_path, key_path).await.unwrap();
-````
-
-读取 `cert.pem` 和 `key.pem` 启动 HTTPS。⚠️ 仓库证书是教学用自签名证书,可能已过期,浏览器会拦截/拒绝。真实本地测试建议重新生成开发证书并让浏览器信任。
-
-### `axum_server::bind_rustls`(不用 `axum::serve`)
-
-````rust
-let mut server = axum_server::bind_rustls(addr, config);
-````
-
-服务运行在 `https://localhost:3000`,WebSocket 地址 `wss://localhost:3000/ws`。
-
-### 启用 HTTP/2 CONNECT protocol(本章关键)
-
-````rust
-server.http_builder().http2().enable_connect_protocol();
-````
-
-**这是本章最关键的一行**。HTTP/2 WebSocket 使用扩展 CONNECT 机制,服务端必须声明支持,否则客户端无法按 HTTP/2 WebSocket 方式连接。源码注释:"This is required to advertise our support for HTTP/2 websockets to the client."
-
-`axum::serve` 默认启用 CONNECT protocol;这里用 `axum_server` 需手动启用。
-
-### `Version` extractor 打印 HTTP 版本
-
-````rust
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    version: Version,                              // 提取 HTTP 版本
-    State(sender): State<broadcast::Sender<String>>,
-) -> axum::response::Response {
-    tracing::debug!("accepted a WebSocket using {version:?}");
-````
-
-`version: Version` 能告诉你连接是 HTTP/1.1 还是 HTTP/2,验证本章很有用。
-
-### 连接内 `tokio::select!` 同时收发(不 split)
-
-````rust
-ws.on_upgrade(|mut ws| async move {
-    loop {
-        tokio::select! {
-            res = ws.recv() => { /* 客户端消息 → broadcast */ }
-            res = receiver.recv() => { /* broadcast → 发回客户端 */ }
-        }
-    }
-})
-````
-
-没 split,直接在一个 loop 里用 `tokio::select!` 同时等 WebSocket 收客户端消息和 broadcast 收其他连接消息。和 42 章的 split + 两个 spawn 任务不同,这是另一种常见写法。
+所有连接的 `ws_handler` 持有同一个 `Sender`（来自 State）+ 自己的 `Receiver`（`.subscribe()`）。某个 client 发消息 → `sender.send()` → 所有 Receiver 收到 → 各自的 ws 发回自己的 socket。
 
 ## 常见问题
 
-**为什么用 `wss`?** HTTP/2 WebSocket 在浏览器里通常需 TLS,前端用 `wss://localhost:3000/ws`。
+**为什么 `axum::serve` 不用 `enable_connect_protocol`？** axum::serve 默认启用。`axum_server::bind_rustls` 不启用，必须手动调用——这是 axum 和 axum_server 的差异。
 
-**示例证书不能直接用?** 自签名开发证书,可能已过期,浏览器会拦。真实本地测试重新生成。
+**HTTP/1.1 客户端能用吗？** 能。这个 server 同时支持 HTTP/1.1 和 HTTP/2，浏览器会自动协商。HTTP/1.1 走普通 upgrade（ch41），HTTP/2 走 Extended CONNECT。
 
-**`enable_connect_protocol` 干什么?** 让服务端声明支持 HTTP/2 扩展 CONNECT,这是 HTTP/2 WebSocket 连接需要的能力。`axum::serve` 默认启用,`axum_server` 需手动开。
-
-**和 chat 区别?** chat 重点聊天室业务和用户名管理;本章重点 HTTP/2 + TLS 下的 WebSocket 连接方式。
+**broadcast 容量满了怎么办？** 新消息会挤掉最旧的（`Lagged` 错误）。源码里 `Err(_) => continue` 跳过这种情况。生产可能要 log 警告或调大容量。
 
 ## 手写任务
 
-1. `RustlsConfig::from_pem_file` 加载证书。
-2. `axum_server::bind_rustls` 启动 HTTPS。
-3. 加 `/ws` WebSocket 路由。
-4. 启用 `server.http_builder().http2().enable_connect_protocol()`。
-5. 前端用 `wss://localhost:3000/ws` 连接。
-6. 用 `Version` extractor 打印 HTTP 版本。
+1. 改成 whisper 模式：消息带 `@user` 前缀的只发给指定用户（提示：每个连接 subscribe 后维护自己的 ID）。
+2. 加用户列表：每个连接 subscribe 时记录，断开时移除，提供 `/users` 接口查询在线用户。
+3. 把消息改成 JSON（带 username + content + timestamp），前端用模板渲染。
 
 ## 小结
 
-- WebSocket over HTTP/2 关键不是 handler 写法而是启动层配置:TLS(rustls) + HTTP/2 + `enable_connect_protocol()`。
-- 用 `axum_server::bind_rustls` 而不是 `axum::serve`;`axum::serve` 默认启用 CONNECT protocol,`axum_server` 需手动开。
-- 前端用 `wss://`(基于 TLS);自签名证书浏览器会拦,本地测试需重新生成并信任。
-- 连接内可复用熟悉模式:recv 客户端消息 → broadcast → send 回客户端;可用 split + 两个任务(42 章)或 `tokio::select!` 同时收发(本章)。
-- `Version` extractor 能拿到 HTTP 版本验证连接是 HTTP/1.1 还是 HTTP/2。
+这章用 2 步讲了 HTTP/2 WebSocket：
+
+1. **server 骨架**：HTTPS（第 46 章）+ `enable_connect_protocol()`（HTTP/2 Extended CONNECT）+ `broadcast::channel` 共享消息。
+2. **ws_handler**：`tokio::select!` 并发读 socket 和 broadcast，cancel-safe 的两个 recv。
+
+核心：HTTP/2 WebSocket 用 RFC 8441 Extended CONNECT，需要在 server 显式启用；`broadcast::channel` 让聊天室模式简洁；`tokio::select!` 处理双向消息。
 
 ## 源码对照
 
 - `examples/websockets-http2/Cargo.toml`
 - `examples/websockets-http2/src/main.rs`
 - `examples/websockets-http2/assets/index.html`
-- `examples/websockets-http2/assets/script.js`
 - `examples/websockets-http2/self_signed_certs/cert.pem`
 - `examples/websockets-http2/self_signed_certs/key.pem`

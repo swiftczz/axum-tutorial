@@ -2,11 +2,11 @@
 
 对应示例：`examples/reqwest-response`
 
-这一章接近"代理"场景:axum 服务收到请求后,用 `reqwest` 请求另一个 HTTP 服务,再把对方的响应**流式转发**给客户端。重点是响应转换 `reqwest::Response → axum::Response`,以及第一次正式使用 `State<T>`。
+这章把 axum 的**流式响应**和 **reqwest 客户端**组合起来：用 reqwest 调下游接口，把下游响应**原样流式转发**给客户端。常见场景：反向代理、API gateway、下载中转。
 
+分 3 步：先写流式响应基础（`Body::from_stream`），再写 reqwest 客户端转 response，最后用 `TraceLayer` 观察流式 chunk。
 
-
-相比前面章节新引入：**`reqwest::Client` 放入 `State`、`Body::from_stream` 流式转发**。
+相比前面章节新引入：**`Body::from_stream`（从任意 Stream 造 body）、`reqwest::Client` 作为 State、`reqwest_response.bytes_stream()`、`TraceLayer::on_body_chunk`**。
 
 ## Cargo.toml
 
@@ -19,28 +19,212 @@ publish = false
 
 [dependencies]
 axum = "0.8"
-reqwest = { version = "0.12", default-features = false, features = ["stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 tokio = { version = "1.0", features = ["full"] }
 tokio-stream = "0.1"
-tower-http = { version = "0.6.1", features = ["trace"] }
+tower-http = { version = "0.6", features = ["trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
-`reqwest` 启用 `stream` feature 才能用 `bytes_stream()`。
-
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## 关键概念
+---
 
-> **新面孔：`reqwest::Client` + `State<Client>`**
->
-> HTTP 客户端适合复用（内部维护连接池），放进 `State` 让所有 handler 共享。`State(client): State<Client>` 是解构语法。
+## 第一步：流式响应基础——`Body::from_stream`
+
+前面章节 handler 返回的 `Json`/`String`/`Html` 都是一次性 buffer 好的响应体。这章要返回**流式**响应体——数据一段段产生，不一次缓冲。先写一个最简的流式 handler：每秒产一个数字。
+
+````rust
+use axum::{
+    body::Body,
+    routing::get,
+    Router,
+};
+use std::{convert::Infallible, time::Duration};
+use tokio_stream::StreamExt;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                format!("{}=debug,tower_http=debug", env!("CARGO_CRATE_NAME")).into()
+            }),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let app = Router::new().route("/stream", get(stream_some_data));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    tracing::debug!("listening on {}", listener.local_addr().unwrap());
+    axum::serve(listener, app).await.unwrap();
+}
+
+async fn stream_some_data() -> Body {
+    let stream = tokio_stream::iter(0..5)
+        .throttle(Duration::from_secs(1))          // 每秒一个
+        .map(|n| n.to_string())
+        .map(Ok::<_, Infallible>);                 // Body::from_stream 要 Stream<Item = Result<_,_>>
+    Body::from_stream(stream)
+}
+````
+
+验证：
+
+````bash
+cd examples
+cargo run -p example-reqwest-response
+````
+
+````bash
+curl http://127.0.0.1:3000/stream
+# 看到 0 1 2 3 4 每秒一个字符流过来（不是一次性出来）
+````
 
 > **新面孔：`Body::from_stream`**
 >
-> 流式转发的关键：reqwest 每到一块 bytes，axum 就往客户端发一块，不把整个响应读进内存。
+> 把任意 `Stream<Item = Result<Bytes, E>>` 转成 axum 响应体。axum 一段段 poll 这个 stream，每 yield 一段就发给客户端——**不缓冲**，适合大文件、实时数据、流式代理。
+>
+> 注意 stream 的 Item 必须是 `Result`——错误类型可以是 `Infallible`（永不失败）或具体错误类型。
 
+> **新面孔：`tokio_stream::StreamExt::throttle`**
+>
+> 给 stream 加节流——每 `Duration` 才放一个 item 通过。这章用来模拟"数据源慢慢产生数据"，验证流式行为。
+
+> **新面孔：`tokio_stream::iter` + `map(Ok)`**
+>
+> 把迭代器转成 stream，再 `map(Ok)` 把每个 item 包成 `Result<_, Infallible>`——因为 `Body::from_stream` 要求 `Stream<Item = Result<_, _>>`。
+
+---
+
+## 第二步：用 reqwest 调下游接口，把响应流转给客户端
+
+加一个 `/` handler：用 reqwest 调本机 `/stream`（第一步那个），把 reqwest 的响应体**原样流式转发**回客户端。
+
+````rust
+use axum::{
+    body::Body,
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::get,
+    Router,
+};
+use reqwest::Client;
+
+# #[tokio::main]
+# async fn main() {
+#     // ...
+    let client = Client::new();
+
+    let app = Router::new()
+        .route("/", get(stream_reqwest_response))
+        .route("/stream", get(stream_some_data))
+        .with_state(client);
+#     // ...
+# }
+
+async fn stream_reqwest_response(State(client): State<Client>) -> Response {
+    // 调下游接口
+    let reqwest_response = match client.get("http://127.0.0.1:3000/stream").send().await {
+        Ok(res) => res,
+        Err(err) => {
+            tracing::error!(%err, "request failed");
+            return (StatusCode::BAD_REQUEST, Body::empty()).into_response();
+        }
+    };
+
+    // 复制下游的状态码和 headers
+    let mut response_builder = Response::builder().status(reqwest_response.status());
+    *response_builder.headers_mut().unwrap() = reqwest_response.headers().clone();
+
+    // 把下游的响应体作为流转给客户端
+    response_builder
+        .body(Body::from_stream(reqwest_response.bytes_stream()))
+        .unwrap()
+}
+````
+
+验证：
+
+````bash
+curl http://127.0.0.1:3000/
+# 同样看到 0 1 2 3 4 每秒一个，但这次是从 /stream 流式转过来的
+````
+
+> **新面孔：`reqwest::Client` 作为 State**
+>
+> reqwest 是 HTTP 客户端库（第 39 章 OAuth 也用过）。`Client::new()` 创建实例（内部有连接池，**必须复用**，不要每次请求 `new` 一次）。
+>
+> 作为 State 注入：`Router::with_state(client)` + `State(client): State<Client>` 取出。和 ch18 依赖注入同构。
+
+> **新面孔：`reqwest_response.bytes_stream()`**
+>
+> reqwest 的响应体是流式的，`.bytes_stream()` 返回 `Stream<Item = Result<Bytes, reqwest::Error>>`。直接传给 `Body::from_stream` 完成流式转发——**下游一段段产，我们一段段转发给客户端，不缓冲**。
+
+> **新面孔：复制 Response 头和状态码**
+>
+> `Response::builder().status(reqwest_response.status())` 复制状态码，`*headers_mut() = reqwest_response.headers().clone()` 复制 headers。这样转发响应保留所有元数据（content-type、缓存头等）。
+
+### 为什么这是反向代理的核心
+
+```text
+客户端 ──请求──> axum server ──reqwest──> 下游 API
+                  ↑                          │
+                  └──流式转发响应<──────────┘
+```
+
+下游响应体**不被完整缓冲**——一段段产一段段转发。下游慢/响应大也不爆内存。生产场景：API gateway、CDN origin、跨域代理。
+
+---
+
+## 第三步：用 `TraceLayer::on_body_chunk` 观察流式行为
+
+加 `TraceLayer` 观察每个 chunk 流过——这是验证流式行为的最佳方式（看到日志一段段出就说明流式生效）。
+
+````rust
+use axum::body::Bytes;
+use tower_http::trace::TraceLayer;
+use tracing::Span;
+
+# #[tokio::main]
+# async fn main() {
+#     // ...
+    let app = Router::new()
+        .route("/", get(stream_reqwest_response))
+        .route("/stream", get(stream_some_data))
+        .layer(
+            TraceLayer::new_for_http().on_body_chunk(
+                |chunk: &Bytes, _latency: Duration, _span: &Span| {
+                    tracing::debug!("streaming {} bytes", chunk.len());
+                },
+            ),
+        )
+        .with_state(client);
+#     // ...
+# }
+````
+
+> **新面孔：`TraceLayer::on_body_chunk`**
+>
+> Tower-http 的 TraceLayer 提供多个钩子（`on_request`/`on_response`/`on_failure`/`on_body_chunk`/`on_eos`）。`on_body_chunk` 在每个响应体 chunk 发出时调用——这章用它打日志验证"流式"。
+>
+> 详细 TraceLayer 配置见第 22 章 tracing-aka-logging。
+
+验证（看日志）：
+
+````bash
+RUST_LOG=example_reqwest_response=debug,tower_http=debug cargo run -p example-reqwest-response
+# 另一个终端
+curl http://127.0.0.1:3000/
+````
+
+服务端日志每隔 1 秒看到一行 `streaming 1 bytes`（数字长度），共 5 行——证明响应是流式发出的，不是一次性的。
+
+---
 
 ## 完整代码
 
@@ -76,6 +260,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(stream_reqwest_response))
         .route("/stream", get(stream_some_data))
+        // Add some logging so we can see the streams going through
         .layer(TraceLayer::new_for_http().on_body_chunk(
             |chunk: &Bytes, _latency: Duration, _span: &Span| {
                 tracing::debug!("streaming {} bytes", chunk.len());
@@ -86,10 +271,8 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
         .unwrap();
-
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-
-    axum::serve(listener, app).await;
+    axum::serve(listener, app).await.unwrap();
 }
 
 async fn stream_reqwest_response(State(client): State<Client>) -> Response {
@@ -103,9 +286,9 @@ async fn stream_reqwest_response(State(client): State<Client>) -> Response {
 
     let mut response_builder = Response::builder().status(reqwest_response.status());
     *response_builder.headers_mut().unwrap() = reqwest_response.headers().clone();
-
     response_builder
         .body(Body::from_stream(reqwest_response.bytes_stream()))
+        // This unwrap is fine because the body is empty here
         .unwrap()
 }
 
@@ -114,7 +297,6 @@ async fn stream_some_data() -> Body {
         .throttle(Duration::from_secs(1))
         .map(|n| n.to_string())
         .map(Ok::<_, Infallible>);
-
     Body::from_stream(stream)
 }
 ````
@@ -126,121 +308,59 @@ cd examples
 cargo run -p example-reqwest-response
 ````
 
-直接访问流:
-
 ````bash
-curl -i http://127.0.0.1:3000/stream
+curl http://127.0.0.1:3000/stream    # 直接流式（每秒 1 字符）
+curl http://127.0.0.1:3000/          # 通过 reqwest 中转的流式（同样每秒）
 ````
 
-访问转发接口:
-
-````bash
-curl -i http://127.0.0.1:3000/
-````
-
-两个请求都逐步收到 `0` 到 `4`,服务端日志能看到每个 body chunk 大小。
+服务端日志每隔 1 秒看到 `streaming N bytes`，证明流式生效。
 
 ## 解读
 
-### 两个接口
+### 缓冲响应 vs 流式响应
 
-| 路径 | handler | 作用 |
+| 维度 | 缓冲响应（前面章节） | 流式响应（这章） |
 | --- | --- | --- |
-| `/` | `stream_reqwest_response` | 请求 `/stream` 并转发响应 |
-| `/stream` | `stream_some_data` | 每秒产生一个数字,模拟慢速流 |
+| 数据产出 | 一次性算完整 | 一段段产 |
+| 内存占用 | 整个 body 进内存 | 一 chunk 大小 |
+| 首字节时间（TTFB） | 慢（要算完） | 快（数据来了就发） |
+| 适用场景 | JSON/HTML 响应 | 大文件、实时数据、代理 |
 
-### 第一次用 `State<T>`
-
-````rust
-let client = Client::new();
-let app = Router::new()
-    .route("/", get(stream_reqwest_response))
-    ...
-    .with_state(client);
-````
-
-`reqwest::Client` 适合复用(内部维护连接池),不应该每个请求重建。用 `.with_state(client)` 放进应用状态,handler 通过 `State(client): State<Client>` 取出。
-
-### `State(client): State<Client>` 是解构语法
-
-第一次看到会疑惑为什么 `State` 出现两次。这是 Rust 函数参数模式匹配,不是 axum 特殊语法。等价写法:
-
-````rust
-// 写法 A(常见):参数里直接解构
-async fn handler(State(client): State<Client>) { ... }
-
-// 写法 B:显式取
-async fn handler(state: State<Client>) {
-    let client = state.0;  // State 是元组结构体,.0 取出里面的 Client
-    ...
-}
-````
-
-`State<T>` 是 axum 定义的元组结构体(`struct State<T>(pub T)`),包住你的共享对象。写 `State(client): State<Client>` 就是说"这个参数类型是 `State<Client>`,把它拆开,绑定到 `client`"。后面第 16 章开始会大量看到这种写法。
-
-### 响应转换三步
-
-````rust
-let mut response_builder = Response::builder().status(reqwest_response.status());
-*response_builder.headers_mut().unwrap() = reqwest_response.headers().clone();
-
-response_builder
-    .body(Body::from_stream(reqwest_response.bytes_stream()))
-    .unwrap()
-````
-
-1. 复制状态码:外部返回什么状态码,axum 就返回什么。
-2. 复制 headers:外部返回什么 headers,axum 先复制一份。真实代理要谨慎转发某些 header(比如 hop-by-hop headers),example 为了演示直接 clone。
-3. **`Body::from_stream(reqwest_response.bytes_stream())`**:这是流式转发的关键。reqwest 每到一块 bytes,axum 就往客户端发一块,没有把整个响应读进内存。
-
-数据流向:
+### `Body` 的多种来源
 
 ```text
-reqwest response body stream
-  → Body::from_stream
-  → axum Response body
-  → 客户端
+Body::empty()                   空响应
+Body::from_string(s)            字符串
+Body::from_bytes(b)             bytes
+Body::from_stream(stream)       任意 Stream<Item = Result<Bytes, _>>
 ```
 
-适合大文件下载、代理接口、SSE 或长响应。
+`Body::from_stream` 是最通用的——其他都是它的特化。
 
-### `TraceLayer::on_body_chunk`
+## 常见问题
 
-````rust
-.layer(TraceLayer::new_for_http().on_body_chunk(
-    |chunk: &Bytes, _latency: Duration, _span: &Span| {
-        tracing::debug!("streaming {} bytes", chunk.len());
-    },
-))
-````
+**为什么要流式转发？** 不流式的话下游响应整段进 axum 内存再发给客户端——下游大文件就 OOM。流式一段段中转，内存恒定。
 
-每发送一个 body chunk 就打印大小,方便观察流式传输。
+**`reqwest::Client` 能复用吗？** 应该复用——内部有连接池，每次 `Client::new()` 会建新池、新 DNS、新 TLS context，慢且浪费。
 
-### `stream_some_data` 模拟慢速流
-
-````rust
-let stream = tokio_stream::iter(0..5)
-    .throttle(Duration::from_secs(1))  // 每秒产出一个
-    .map(|n| n.to_string())
-    .map(Ok::<_, Infallible>);          // Body::from_stream 要 Result item
-````
-
-`Infallible` 表示这个 stream 不会失败。
+**`on_body_chunk` 性能影响大吗？** 不大——只在每个 chunk 调一次闭包，tracing span 也是延迟构造的。生产可保留。
 
 ## 手写任务
 
-跑通后做三个小改动:
-
-1. 把 `/stream` 的 `0..5` 改成 `0..10`,观察响应时间变化。
-2. 把 `throttle` 从 1 秒改成 200 毫秒,观察日志里 chunk 输出频率。
-3. 给 `/stream` 增加一个自定义 header,观察 `/` 是否也转发了这个 header。
+1. 改 `stream_some_data` 成无限流（`tokio_stream::iter` 换成 `tokio::time::interval`），观察客户端长时间收到数据。
+2. 转发 handler 加上错误重试（下游 5xx 重试一次）。
+3. 加个聚合 handler：同时调多个下游接口，把所有响应拼成一个流发回。
+4. 加 `Content-Type: text/event-stream`，把 `/stream` 变成 SSE 接口（参考 ch40）。
 
 ## 小结
 
-- axum 服务也能作为 HTTP 客户端请求其他服务。
-- `State<T>` 用来把可复用对象(如 reqwest Client)传给 handler,`State(client): State<Client>` 是解构语法。
-- `reqwest::Response` 不能直接作为 axum response,要手动转换状态码、headers、body。
-- `Body::from_stream` 是流式转发的关键,外部每到一块 bytes 就转发一块,不读进内存。
+这章用 3 步讲了流式响应 + reqwest 转发：
+
+1. **流式基础**：`Body::from_stream(stream)` 把任意 Stream 转成响应体，数据一段段产不发。
+2. **reqwest 转发**：`reqwest::Client` 调下游，`.bytes_stream()` 拿流式 body，直接 `Body::from_stream` 中转——反向代理的核心模式。
+3. **观察流式**：`TraceLayer::on_body_chunk` 在每个 chunk 打日志，验证流式行为。
+
+核心：**`Body::from_stream` 是 axum 流式响应的通用接口**——reqwest 响应、文件流、SSE、WebSocket 都通过它接入。reqwest 转发是反向代理最简实现。
 
 ## 源码对照
 

@@ -2,7 +2,11 @@
 
 对应示例：`examples/cors`
 
-前端页面和后端 API 不在同一个 origin 时,浏览器会检查 CORS 响应头。本章用 `CorsLayer` 允许指定前端访问后端接口,并重点讲清 **preflight 预检请求**这个最容易踩坑的概念。
+浏览器的**同源策略**（Same-Origin Policy）阻止网页 JS 跨域请求——`http://localhost:3000` 的 JS 默认不能调 `http://localhost:4000` 的 API。**CORS**（Cross-Origin Resource Sharing）是服务端用响应头告诉浏览器"允许哪些来源跨域访问"的标准机制。
+
+分 2 步：先复现跨域被浏览器拦截的问题，再用 `CorsLayer` 配置允许跨域。
+
+相比前面章节新引入：**同源策略与跨域、`tower-http::cors::CorsLayer`、`Origin`/`Access-Control-Allow-Origin` 头、预检（Preflight）请求**。
 
 ## Cargo.toml
 
@@ -16,19 +20,176 @@ publish = false
 [dependencies]
 axum = "0.8"
 tokio = { version = "1.0", features = ["full"] }
-tower-http = { version = "0.6.1", features = ["cors"] }
+tower-http = { version = "0.6", features = ["cors"] }
 ````
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## 关键概念
+---
 
-> **新面孔：CORS + preflight**
+## 第一步：复现跨域问题
+
+先同时跑前端（端口 3000，提供 HTML）+ 后端（端口 4000，提供 JSON API）。前端 HTML 里的 JS fetch 后端 API——浏览器会拦截跨域请求。
+
+````rust
+use axum::{
+    response::{Html, IntoResponse},
+    routing::get,
+    Json, Router,
+};
+use std::net::SocketAddr;
+
+#[tokio::main]
+async fn main() {
+    let frontend = async {
+        let app = Router::new().route("/", get(html));
+        serve(app, 3000).await;
+    };
+
+    let backend = async {
+        // 注意：这步**没**加 CorsLayer
+        let app = Router::new().route("/json", get(json));
+        serve(app, 4000).await;
+    };
+
+    tokio::join!(frontend, backend);
+}
+
+async fn serve(app: Router, port: u16) {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+
+// 前端页面：JS fetch 后端 API
+async fn html() -> impl IntoResponse {
+    Html(
+        r#"
+        <script>
+            fetch('http://localhost:4000/json')
+              .then(response => response.json())
+              .then(data => console.log(data));
+        </script>
+        "#,
+    )
+}
+
+// 后端 API：返回 JSON
+async fn json() -> impl IntoResponse {
+    Json(vec!["one", "two", "three"])
+}
+````
+
+验证：
+
+````bash
+cd examples
+cargo run -p example-cors
+````
+
+浏览器打开 `http://localhost:3000/`，打开 dev tools console，看到错误：
+
+```text
+Access to fetch at 'http://localhost:4000/json' from origin 'http://localhost:3000'
+has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present
+on the requested resource.
+```
+
+浏览器拦截了——后端响应没 CORS 头。下一步加。
+
+> **新面孔：同源策略（Same-Origin Policy）**
 >
-> CORS 是浏览器规则（不是后端鉴权）。非简单请求（POST JSON 等）会先触发 preflight（OPTIONS），`CorsLayer` 自动回复。
+> 浏览器安全机制：网页 JS 默认只能请求**同源**资源。"同源" = scheme + host + port 完全相同。`http://localhost:3000` 和 `http://localhost:4000` 端口不同，不同源，跨域被拦。
+>
+> 注意：**这是浏览器行为**，不是 HTTP 协议限制。`curl` 不受同源策略影响——它照样能请求。
 
+> **新面孔：跨域场景**
+>
+> - 前后端分离：前端 `localhost:3000` 调后端 `localhost:4000`（开发）
+> - CDN + API：前端 `cdn.example.com` 调 API `api.example.com`
+> - 第三方 API：你的网站调 GitHub/Google API
+>
+> 这些都需要 CORS 才能在浏览器里工作。
 
-## src/main.rs
+---
+
+## 第二步：加 `CorsLayer` 允许跨域
+
+后端加 `tower-http` 的 `CorsLayer`，配置允许的 origin/method/headers。配置后浏览器看到 CORS 头就放行。
+
+````rust
+use axum::http::{HeaderValue, Method};
+use tower_http::cors::CorsLayer;
+
+# #[tokio::main]
+# async fn main() {
+#     // ...
+    let backend = async {
+        let app = Router::new().route("/json", get(json)).layer(
+            CorsLayer::new()
+                .allow_origin("http://localhost:3000".parse::<HeaderValue>().unwrap())
+                .allow_methods([Method::GET]),
+        );
+        serve(app, 4000).await;
+    };
+#     // ...
+# }
+````
+
+现在浏览器再请求，console 看到响应头：
+
+```text
+Access-Control-Allow-Origin: http://localhost:3000
+```
+
+fetch 成功，`["one", "two", "three"]` 打印出来。
+
+> **新面孔：`CorsLayer`**
+>
+> tower-http 提供的 CORS layer。`CorsLayer::new()` 开始构建，链式配置：
+>
+> - `.allow_origin(origin)`：允许的来源（一个 `HeaderValue`，或 `AllowOrigin::any()` 允许所有）
+> - `.allow_methods([Method::GET, Method::POST])`：允许的 HTTP 方法
+> - `.allow_headers([CONTENT_TYPE, AUTHORIZATION])`：允许的请求头
+> - `.allow_credentials(true)`：是否允许带 cookie
+> - `.max_age(Duration::from_secs(3600))`：预检结果缓存时间
+>
+> axum 收到请求时，CorsLayer 检查 Origin 头，匹配就加 CORS 响应头。
+
+> **新面孔：`allow_origin` 严格 vs 宽松**
+>
+> - `.allow_origin("http://localhost:3000".parse().unwrap())`：**只允许**这个 origin（严格）
+> - `.allow_origin(AllowOrigin::any())`：允许任意 origin（宽松，但**不能同时 `allow_credentials(true)`**）
+> - `.allow_origin([origin1, origin2])`：白名单
+>
+> 生产环境推荐白名单——只允许你自己的前端域名。
+
+> **新面孔：预检（Preflight）请求**
+>
+> 浏览器对**非简单请求**（如带自定义 header、`Content-Type: application/json`、PUT/DELETE）会先发 **OPTIONS** 请求询问后端"这个跨域请求允许吗"。后端响应允许的方法/headers，浏览器才发真正的请求。
+>
+> ```text
+> 1. OPTIONS /json  + Origin + Access-Control-Request-Method   → 预检
+> 2. 后端响应: Access-Control-Allow-Origin + Allow-Methods
+> 3. 浏览器看到允许，发真正的 GET /json
+> ```
+>
+> `CorsLayer` 自动处理 OPTIONS——你不用写 OPTIONS handler，layer 会响应预检。
+
+### 为什么 `allow_headers([CONTENT_TYPE])` 重要
+
+如果前端发 `Content-Type: application/json` 的 POST，浏览器会发预检询问"是否允许 Content-Type 头"。`CorsLayer` 默认不允许，预检失败，POST 被拦。所以处理 JSON 请求要：
+
+````rust
+CorsLayer::new()
+    .allow_origin(...)
+    .allow_methods([Method::GET, Method::POST])
+    .allow_headers([http::header::CONTENT_TYPE])  // 必须显式允许
+````
+
+---
+
+## 完整代码
 
 ````rust
 use axum::{
@@ -49,11 +210,16 @@ async fn main() {
 
     let backend = async {
         let app = Router::new().route("/json", get(json)).layer(
+            // see https://docs.rs/tower-http/latest/tower_http/cors/index.html
+            // for more details
+            //
+            // pay attention that for some request types like posting content-type: application/json
+            // it is required to add ".allow_headers([http::header::CONTENT_TYPE])"
+            // or see this issue https://github.com/tokio-rs/axum/issues/849
             CorsLayer::new()
                 .allow_origin("http://localhost:3000".parse::<HeaderValue>().unwrap())
                 .allow_methods([Method::GET]),
         );
-
         serve(app, 4000).await;
     };
 
@@ -63,7 +229,7 @@ async fn main() {
 async fn serve(app: Router, port: u16) {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app).await;
 }
 
 async fn html() -> impl IntoResponse {
@@ -90,166 +256,58 @@ cd examples
 cargo run -p example-cors
 ````
 
-浏览器打开 `http://localhost:3000/`(注意用 `localhost` 不用 `127.0.0.1`),打开 Console 看到:
-
-````text
-["one", "two", "three"]
-````
-
-查看后端响应头:
-
-````bash
-curl -i -H 'Origin: http://localhost:3000' http://localhost:4000/json
-````
-
-重点看:
-
-````text
-access-control-allow-origin: http://localhost:3000
-````
-
-不允许的 origin:
-
-````bash
-curl -i -H 'Origin: http://evil.example' http://localhost:4000/json
-# 响应不应给出允许 http://evil.example 的 CORS header
-````
+浏览器打开 `http://localhost:3000/`，dev tools console 看到 `["one", "two", "three"]`，没有 CORS 错误。
 
 ## 解读
 
-### origin 和"跨域"
-
-浏览器判断"同源"看 origin = 协议 + 主机 + 端口。下面这些都不是同一个 origin:
+### CORS 工作流
 
 ```text
-http://localhost:3000
-http://localhost:4000      (端口不同)
-https://localhost:3000     (协议不同)
-http://127.0.0.1:3000      (主机不同)
+浏览器（http://localhost:3000）             后端（http://localhost:4000）
+    │                                            │
+    │  GET /json  + Origin: http://localhost:3000 │
+    │ ──────────────────────────────────────────>│
+    │                                            │
+    │  200 OK + Access-Control-Allow-Origin: ... │
+    │ <──────────────────────────────────────────│
+    │                                            │
+    │  浏览器检查 Allow-Origin 包含自己 → 放行    │
 ```
 
-哪怕都是本机,只要端口不同就是跨域。
+关键：CORS 是**浏览器实现的**安全机制。后端只是加几个 HTTP 头告诉浏览器"我允许跨域"，浏览器自己决定是否放行 JS 读取响应。
 
-### CORS 是浏览器的规则
+### 为什么 CORS 防御有效
 
-CORS 是**浏览器**执行的安全规则,不是 axum 或 Rust 特有:
+没有 CORS 的话，恶意网站 `evil.com` 的 JS 可以请求 `bank.com/api/transfer`（带用户 cookie），转移用户钱。CORS 让 `bank.com` 显式声明"我只信任 `bank.com` 自己的前端"，`evil.com` 的跨域请求被拦。
 
-```text
-curl 请求后端接口    → 通常不会被 CORS 拦截
-浏览器页面 fetch 后端 → 会检查 CORS
-```
+## 常见问题
 
-所以你会遇到"curl 成功但浏览器 fetch 报 CORS 错"——不是后端接口不通,而是浏览器不允许当前页面读取跨域响应。
+**CORS 错误一定是后端问题吗？** 是——浏览器报 CORS 错说明后端响应头不对。修复必须改后端（这章加 CorsLayer）。
 
-### 两个服务同时跑
+**为什么 `curl` 测试没 CORS 问题？** curl 不实现同源策略——它不是浏览器。CORS 只影响浏览器 JS。
 
-````rust
-let frontend = async { ... serve(app, 3000).await; };
-let backend = async { ... serve(app, 4000).await; };
-tokio::join!(frontend, backend);
-````
+**`allow_credentials(true)` 怎么用？** 允许跨域请求带 cookie。前提是 `allow_origin` 必须是具体值（不能是 `*`）——浏览器不允许 wildcard + credentials。
 
-两个 HTTP 服务都要一直运行,不能一个 `await` 完再启动另一个(第一个永远不返回),所以用 `tokio::join!`。
-
-### `CorsLayer` 三件套
-
-````rust
-CorsLayer::new()
-    .allow_origin("http://localhost:3000".parse::<HeaderValue>().unwrap())
-    .allow_methods([Method::GET]),
-````
-
-告诉浏览器:允许 `http://localhost:3000` 这个 origin 用 GET 方法跨域访问。后端响应带上 `access-control-allow-origin: http://localhost:3000`,浏览器看到才允许页面 JS 读取响应。
-
-**`allow_origin` 要精确匹配**:`http://localhost:3000` 和 `http://127.0.0.1:3000` 不是同一个 origin。浏览器里打开的是 `127.0.0.1` 但后端只允许 `localhost`,仍会报 CORS 错。
-
-### preflight 预检请求(CORS 最关键的概念)
-
-example 演示的是简单 GET 请求,没触发 preflight。但**一旦写 POST JSON 或带自定义 header,浏览器会先发一个预检请求**。
-
-**什么是 preflight**:对"非简单请求",浏览器不直接发真请求,而是先发一个 `OPTIONS` 请求问后端"我能不能用这种方法、这些 header 跨域访问":
-
-```text
-浏览器想发:POST /json  content-type: application/json  (跨域)
-       ↓
-浏览器先发:OPTIONS /json  (preflight,没 body)
-       ↓
-后端回复:HTTP 200 + CORS 允许头
-       ↓ 浏览器检查通过
-浏览器才发真正的:POST /json
-```
-
-preflight 是 `OPTIONS` 方法,**不会到达你的 handler**。
-
-**什么请求触发 preflight**:"简单请求"条件很严:方法只能是 GET/HEAD/POST、`content-type` 只能是 `text/plain`/`multipart/form-data`/`application/x-www-form-urlencoded`、没有自定义 header。不是简单请求就触发 preflight:
-
-| 请求 | 为什么触发 |
-| --- | --- |
-| `POST` + `content-type: application/json` | content-type 不在允许的三种 |
-| 带 `Authorization` 的请求 | 自定义 header |
-| `PUT` / `DELETE` / `PATCH` | 方法不在简单列表 |
-| 带 `X-Requested-With` 等 `X-` header | 自定义 header |
-
-**CorsLayer 自动处理 preflight**:`tower-http` 的 `CorsLayer` 会自动响应 preflight——当 `OPTIONS` 请求到达时,它根据你的配置自动返回带 CORS 头的 200。你不需要写 `OPTIONS` handler,handler 根本不会被调用。
-
-所以 POST JSON 时配置:
-
-````rust
-CorsLayer::new()
-    .allow_origin(...)
-    .allow_methods([Method::GET, Method::POST])
-    .allow_headers([axum::http::header::CONTENT_TYPE])
-````
-
-做了两件事:给真请求响应加 `access-control-allow-origin`,自动回复 preflight(返回 `access-control-allow-methods: GET, POST` 和 `access-control-allow-headers: content-type`)。
-
-**常见 preflight 报错**:
-
-```text
-blocked by CORS policy: Response to preflight request doesn't pass...
-Request header field content-type is not allowed by Access-Control-Allow-Headers
-in preflight response.
-```
-
-排查方向:
-
-- 后端是否真的挂了 `CorsLayer`?
-- `allow_methods` 是否包含请求要用的方法(POST/PUT/DELETE)?
-- `allow_headers` 是否包含请求要带的 header(尤其 `content-type`)?
-- **是否有其他 middleware 在 `CorsLayer` 之前拦截了 OPTIONS?**(最坑:认证 middleware 把未认证的 OPTIONS 返回 401,CorsLayer 没机会回复。解决:CorsLayer 放最外层,或认证 middleware 放行 OPTIONS)
-
-**`MaxAge` 缓存 preflight**:每次非简单请求都 preflight 会很慢,`.max_age(Duration::from_secs(3600))` 让浏览器缓存 preflight 结果。
-
-### CORS 的边界
-
-- **CORS 不是后端鉴权机制**——它只限制浏览器页面读取响应,不能保护后端不被调用(接口需要保护仍要做认证授权)。
-- **生产环境不能全放开**——公开 API 和带登录态的 API,CORS 策略不能随便 `allow_origin` 全允许。
-- **curl 成功但浏览器报 CORS 是正常的**——CORS 是浏览器规则。
+**生产环境 CORS 怎么配？**
+- 网关层（Nginx/CDN）统一处理 CORS
+- 或每个 axum app 加 CorsLayer（白名单具体 origin）
+- **不要用 `AllowOrigin::any()` + credentials**——不安全
 
 ## 手写任务
 
-按下面顺序敲:
-
-1. 写一个 `GET /json` 返回 `Json(vec![...])`。
-2. 写一个 `GET /` 返回带 `fetch` 的 HTML。
-3. 用 `serve(app, port)` 分别启动 3000 和 4000。
-4. 用 `tokio::join!` 同时运行。
-5. 给后端 Router 加 `CorsLayer`。
-6. 浏览器 Console 验证前端能读到 JSON。
-
-加深练习:
-
-1. 浏览器地址改成 `http://127.0.0.1:3000/`,观察是否还能通过。
-2. 把 `.allow_methods([Method::GET])` 改成不含 GET,观察报错。
-3. 改成 POST JSON,补上 `.allow_headers([axum::http::header::CONTENT_TYPE])`。
+1. 加 POST 路由，前端改成发 JSON POST，加 `.allow_methods([GET, POST])` 和 `.allow_headers([CONTENT_TYPE])`。
+2. 改成白名单：`.allow_origin([origin1, origin2])`，对比效果。
+3. 加 `allow_credentials(true)` + cookie，跨域带 session。
+4. 用 curl 模拟预检请求：`curl -X OPTIONS -H "Origin: http://localhost:3000" -H "Access-Control-Request-Method: GET" -i http://localhost:4000/json`。
 
 ## 小结
 
-- CORS 是浏览器规则:浏览器是否允许当前页面读取另一个 origin 的响应。curl 通常不受影响。
-- origin = 协议 + 主机 + 端口,任一不同就是跨域;`localhost` 和 `127.0.0.1` 不是同源。
-- `CorsLayer` 配置三件套:`allow_origin`(精确匹配)、`allow_methods`、按需 `allow_headers`。
-- **非简单请求(POST JSON/自定义 header/PUT/DELETE)会触发 preflight**——浏览器先发 `OPTIONS`。`CorsLayer` 自动回复 preflight,不需写 OPTIONS handler。
-- CORS 不是鉴权机制,生产环境不能随便全放开;认证 middleware 拦截 OPTIONS 是常见坑,让 CorsLayer 放最外层。
+这章用 2 步讲了 CORS：
+
+1. **复现问题**：浏览器同源策略阻止跨域请求，前端 JS fetch 后端报 CORS 错。
+2. **`CorsLayer`**：tower-http 提供，配置 `allow_origin` / `allow_methods` / `allow_headers`，浏览器看到头就放行。
+
+核心：CORS 是**浏览器**的安全机制（不是 HTTP 协议）；后端用 `CorsLayer` 显式声明允许跨域；生产用白名单具体 origin，不用 wildcard + credentials。
 
 ## 源码对照
 

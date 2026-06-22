@@ -2,11 +2,11 @@
 
 对应示例：`examples/versioning`
 
-把自定义 extractor 用在一个真实后端场景上:API 版本管理。路径里的 `v1`/`v2`/`v3` 被自定义 extractor 转成 Rust enum `Version`,handler 不用自己 match 字符串。
+API 演进时常见需求：**同一个接口同时支持多个版本**（`/v1/users`、`/v2/users`）。这章用自定义 extractor 把"解析版本"封装成 `Version` 类型，handler 直接声明 `version: Version` 就拿到枚举值，避免到处写 string 匹配。
 
+分 2 步：先写 `Version` extractor（从 URL 路径解析 v1/v2/v3 枚举），再加错误处理（未知版本返回 404）。
 
-
-相比前面章节新引入：**`FromRequestParts`（只读 parts）、`RequestPartsExt::extract`、`Path<HashMap>`**。
+相比前面章节新引入：**自定义 `FromRequestParts` extractor 解析路径参数、`Path<HashMap<String, String>>`、枚举作为 extractor 返回值**。
 
 ## Cargo.toml
 
@@ -18,24 +18,134 @@ edition = "2024"
 publish = false
 
 [dependencies]
-axum = "0.8"
+axum = { version = "0.8", features = ["macros"] }
 tokio = { version = "1.0", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-[dev-dependencies]
-http-body-util = "0.1.0"
-tower = { version = "0.5.2", features = ["util"] }
 ````
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## 关键概念
+---
 
-> **新面孔：`FromRequestParts`**
+## 第一步：`Version` extractor——从路径解析枚举
+
+核心是写一个 `Version` 枚举（V1/V2/V3），实现 `FromRequestParts` 从 URL 路径参数 `{version}` 解析出来。handler 写 `version: Version` 自动提取。
+
+````rust
+use axum::{
+    extract::{FromRequestParts, Path},
+    http::{request::Parts, StatusCode},
+    response::{Html, IntoResponse, Response},
+    routing::get,
+    RequestPartsExt, Router,
+};
+use std::collections::HashMap;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[derive(Debug)]
+enum Version {
+    V1,
+    V2,
+    V3,
+}
+
+impl<S> FromRequestParts<S> for Version
+where
+    S: Send + Sync,
+{
+    // rejection 是 Response 类型——可以构造任意状态码/消息的响应
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        // 从路径参数提取 version
+        let params: Path<HashMap<String, String>> =
+            parts.extract().await.map_err(IntoResponse::into_response)?;
+
+        let version = params
+            .get("version")
+            .ok_or_else(|| (StatusCode::NOT_FOUND, "version param missing").into_response())?;
+
+        match version.as_str() {
+            "v1" => Ok(Version::V1),
+            "v2" => Ok(Version::V2),
+            "v3" => Ok(Version::V3),
+            _ => Err((StatusCode::NOT_FOUND, "unknown version").into_response()),
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::registry()
+        .with(/* tracing 初始化 */)
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let app = Router::new().route("/{version}/foo", get(handler));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    tracing::debug!("listening on {}", listener.local_addr().unwrap());
+    axum::serve(listener, app).await.unwrap();
+}
+
+async fn handler(version: Version) -> Html<String> {
+    Html(format!("received request with version {version:?}"))
+}
+````
+
+验证：
+
+````bash
+cd examples
+cargo run -p example-versioning
+
+curl http://127.0.0.1:3000/v1/foo    # received request with version V1
+curl http://127.0.0.1:3000/v2/foo    # received request with version V2
+curl http://127.0.0.1:3000/v3/foo    # received request with version V3
+curl http://127.0.0.1:3000/v4/foo    # unknown version（404）
+````
+
+> **新面孔：枚举作为 Extractor**
 >
-> 版本 extractor 只读 parts（路径参数），不读 body，用 `FromRequestParts`。`Path<HashMap<String, String>>` 提取所有路径参数。
+> 前面章节 extractor 都是 struct（`User`、`Json<T>`）。这里 `Version` 是枚举——任何类型只要实现 `FromRequestParts`（或 `FromRequest`）就能当 extractor。
+>
+> 好处：handler 写 `version: Version` 拿到的是**类型安全**的枚举值，编译期保证不会写错版本字符串。
 
+> **新面孔：`Path<HashMap<String, String>>`**
+>
+> 第 16 章 todos 用过 `Path<u32>`（单参数按位置）。这章用 `Path<HashMap<String, String>>`——按**名字**提取所有路径参数。
+>
+> 路由 `/{version}/foo` 定义了名为 `version` 的参数。`params.get("version")` 按名字取值。这种方式适合参数多或不确定顺序的场景。
+
+> **新面孔：`type Rejection = Response`**
+>
+> 第 11 章 `ServerError` rejection 是固定类型。这里 rejection 直接是 `Response`——最灵活的 rejection 类型，可以构造任意响应。
+>
+> `(StatusCode::NOT_FOUND, "unknown version").into_response()` 用元组 `IntoResponse` 构造 404 响应。`.into_response()` 把任何 `IntoResponse` 类型转成 `Response`。
+
+> **新面孔：`RequestPartsExt::extract`**
+>
+> 在 `FromRequestParts` 的实现里，`parts.extract::<T>().await` 跑其他 parts 类 extractor。这里在 `Version` 的 `from_request_parts` 里又跑了 `Path<HashMap>` extractor——避免手写 URL 解析。
+>
+> `extract` 是 `RequestPartsExt` trait 提供的方法，必须 `use axum::RequestPartsExt;` 才能用。
+
+---
+
+## 第二步：理解错误处理链
+
+```text
+请求 GET /v4/foo
+  → axum 路由匹配 /{version}/foo，version="v4"
+  → handler 进入前，提取 Version extractor
+  → Version::from_request_parts 解析 "v4"
+  → match "v4" 走 _ 分支 → Err((StatusCode::NOT_FOUND, "unknown version").into_response())
+  → handler 不执行，直接返回这个 Response 给客户端
+```
+
+axum 看到 extractor 返回 `Err(rejection)`，直接把 rejection 当响应返回，**handler 根本不会被调用**。所以这章 handler 永远拿不到无效版本——校验在进入 handler 前完成。
+
+---
 
 ## 完整代码
 
@@ -60,13 +170,15 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // build our application with some routes
+    let app = app();
+
+    // run it
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
         .unwrap();
-
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-
-    axum::serve(listener, app()).await;
+    axum::serve(listener, app).await;
 }
 
 fn app() -> Router {
@@ -106,6 +218,9 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
 ````
 
 ## 运行
@@ -113,126 +228,60 @@ where
 ````bash
 cd examples
 cargo run -p example-versioning
-````
 
-合法版本:
-
-````bash
-curl -i http://127.0.0.1:3000/v1/foo
-# 预期: received request with version V1
-
-curl -i http://127.0.0.1:3000/v2/foo
-# 预期: received request with version V2
-````
-
-未知版本:
-
-````bash
-curl -i http://127.0.0.1:3000/v4/foo
-# 预期 404: unknown version
-````
-
-运行测试:
-
-````bash
-cargo test -p example-versioning
+curl http://127.0.0.1:3000/v1/foo   # received request with version V1
+curl http://127.0.0.1:3000/v4/foo   # unknown version (404)
 ````
 
 ## 解读
 
-### 为什么需要版本
+### API 版本化的几种方案
 
-真实 API 会演进。接口字段、校验规则、业务语义变了,就开新版本:`GET /v1/users` → `GET /v2/users`。老客户端访问 v1,新客户端访问 v2。版本可放在路径(`/v1/foo`)、Header(`api-version: v1`)或 Query(`/foo?version=v1`)。本章演示路径版本。
+| 方案 | URL | 优点 | 缺点 |
+| --- | --- | --- | --- |
+| **路径版本（这章）** | `/v1/users` | 直观、缓存友好 | 改动 URL |
+| Header 版本 | `/users` + `Accept: application/vnd.x.v1+json` | URL 干净 | 客户端要会发 header |
+| Query 版本 | `/users?version=1` | URL 简单 | 缓存不友好 |
+| Host 版本 | `v1.api.example.com/users` | 完全隔离 | DNS/证书管理麻烦 |
 
-### handler 直接接收 enum
+这章用路径版本——最常见、最直观。
 
-````rust
-async fn handler(version: Version) -> Html<String> {
-    Html(format!("received request with version {version:?}"))
-}
-````
+### 自定义 extractor 模式
 
-参数不是 `Path<String>` 而是 `Version`——版本解析被封装进 extractor,handler 不用关心字符串,也不用自己 match。用 enum 比裸字符串更清楚:编译器能帮你检查 match 是否覆盖所有版本。
+这章 `Version` extractor 模式可复用——任何"从请求某部分解析出枚举"的场景都能这么写：
 
-### 自定义 `Version` extractor
+- `Locale` extractor：从 `Accept-Language` 解析 en/zh/ja
+- `SortOrder` extractor：从 query 参数解析 asc/desc
+- `Pagination` extractor：从 query 解析 page/page_size
 
-````rust
-impl<S> FromRequestParts<S> for Version
-where
-    S: Send + Sync,
-{
-    type Rejection = Response;
+核心是 `FromRequestParts` + 内部用已有 extractor（`Path`/`Query`）解析。
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let params: Path<HashMap<String, String>> =
-            parts.extract().await.map_err(IntoResponse::into_response)?;
+## 常见问题
 
-        let version = params
-            .get("version")
-            .ok_or_else(|| (StatusCode::NOT_FOUND, "version param missing").into_response())?;
+**为什么 rejection 用 `Response` 而不是自定义错误类型？** `Response` 是最灵活的——可以任意构造。这章错误简单（"unknown version"），不需要复杂错误类型。如果错误复杂（多种错误码、JSON body），用自定义错误类型 + `IntoResponse` 更好（参考 ch19 error-handling）。
 
-        match version.as_str() {
-            "v1" => Ok(Version::V1),
-            ...
-        }
-    }
-}
-````
+**`Path<HashMap>` 和 `Path<Struct>` 区别？** HashMap 灵活（参数顺序无所谓）但没类型检查；Struct 类型安全但要 derive Deserialize。这章参数只有一个，HashMap 简单。
 
-版本来自路径参数,不读 body,所以实现 `FromRequestParts`。用 `RequestPartsExt::extract()` 从 parts 里运行 `Path<HashMap<String, String>>` extractor,把所有路径参数提取成 HashMap,再 match 字符串转 enum。
-
-| 路径值 | 结果 |
-| --- | --- |
-| `v1` / `v2` / `v3` | `Version::V1` / `V2` / `V3` |
-| 其他 | 404 `unknown version` |
-
-### 404 还是 400?
-
-未知版本返回 404(表示"这个版本的接口不存在")还是 400(表示"客户端请求格式有问题"),是设计选择:
-
-- **404**(example 选择):把 `/v4/foo` 理解成"请求一个不存在的资源",REST API 惯例倾向这个。
-- **400**:把版本号理解成"客户端发了一个不支持的版本值",更像输入错误。
-
-选哪个都行,但整个 API 要保持一致。
-
-### 更地道的写法
-
-example 用 `Path<HashMap>` + 手写 extractor 绕了一层。如果不需要定制错误响应,可以让 `Version` 直接实现 `Deserialize`,用 `Path<Version>` 一步到位:
-
-````rust
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum Version { V1, V2, V3 }
-
-async fn handler(Path(version): Path<Version>) -> Html<String> { ... }
-````
-
-`#[serde(rename_all = "lowercase")]` 把 `V1` 映射成 `"v1"`。两种写法取舍:
-
-| 写法 | 优点 | 缺点 |
-| --- | --- | --- |
-| `Path<Version>`(serde) | 代码少,地道 | 错误响应是 axum 默认 rejection,不易定制 |
-| `Path<HashMap>` + 手写 extractor | 完全控制错误响应和状态码 | 代码多 |
-
-要统一错误格式(像第 11 章那种自定义 JSON)走手写路线;不需要定制就用 serde。
+**怎么处理废弃版本？** 加 `Version::Deprecated` 变体，匹配时返回 410 Gone + 提示升级。
 
 ## 手写任务
 
-跑通后做三个小改动:
-
-1. 新增 `Version::V4`,让 `/v4/foo` 返回成功。
-2. 把未知版本错误从纯文本改成 JSON,例如 `{"error":"unknown version"}`。
-3. 新增路由 `/{version}/bar`,复用同一个 `Version` extractor。
+1. 加 `Version::V4`，行为和 V3 不同（返回不同响应）。
+2. 加 `Deprecated` 标记：V1 返回 `Deprecation` header 警告。
+3. 写 `Locale` extractor 从 `Accept-Language` 解析。
+4. 把 rejection 改成 JSON 格式：`{"error": "unknown version", "version": "v4"}`。
 
 ## 小结
 
-- API 版本可放在路径里,自定义 extractor 把字符串转换成业务 enum。
-- 版本来自路径参数不读 body,用 `FromRequestParts`。
-- handler 接收 enum 比裸字符串清晰,编译器能帮你检查 match 覆盖。
-- `Path<HashMap<String, String>>` 适合动态读取多个路径参数。
-- 不需要定制错误响应时,`Path<Version>`(serde 自动)比手写 extractor 更简洁。
+这章用 1 个 extractor 讲了 API 版本化：
+
+1. **`Version` 枚举**：V1/V2/V3 + `FromRequestParts` 实现，从 URL 路径解析。
+2. **错误处理**：未知版本 rejection 直接返回 404 响应，handler 不被调用。
+
+核心模式：**枚举 + `FromRequestParts` + 内部用 `Path`/`Query` 解析**，把"字符串匹配"封装成类型安全的 extractor。这套模式适用于 locale、排序、分页等任意"从请求解析枚举"的场景。
 
 ## 源码对照
 
 - `examples/versioning/Cargo.toml`
 - `examples/versioning/src/main.rs`
+- `examples/versioning/tests/tests.rs`

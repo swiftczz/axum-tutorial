@@ -2,11 +2,11 @@
 
 对应示例：`examples/parse-body-based-on-content-type`
 
-前面学过两种 body 解析:`Json<T>`(ch02)解析 `application/json`,`Form<T>`(ch06)解析 `application/x-www-form-urlencoded`。本章写一个自定义 extractor `JsonOrForm<T>`,根据请求头 `content-type` 自动选择用哪一个。这章比前几章偏 axum 提取器机制。
+`Json<T>` 解析 JSON body，`Form<T>` 解析表单 body——但**一个 handler 只能接收一种**。这章写一个 `JsonOrForm<T>` extractor，**根据 `Content-Type` 自动选择**解析方式。让同一个接口同时支持 JSON 和表单提交。
 
+分 3 步：先看 axum 的 `Json`/`Form` 各自只认特定 content-type，再写 `JsonOrForm<T>` 按 content-type 分发，最后用 `RequestExt::extract` 在 request 上调用其他 extractor。
 
-
-相比前面章节新引入：**`FromRequest`（消费 body 的 extractor）、`RequestExt::extract`（复用其他 extractor）、415 Unsupported Media Type**。
+相比前面章节新引入：**`RequestExt::extract`（在 request 上调 extractor）、`CONTENT_TYPE` 头检查、`StatusCode::UNSUPPORTED_MEDIA_TYPE` rejection**。
 
 ## Cargo.toml
 
@@ -18,7 +18,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-axum = "0.8"
+axum = { version = "0.8", features = ["macros"] }
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.0", features = ["full"] }
 tracing = "0.1"
@@ -27,16 +27,177 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## 关键概念
+---
 
-> **新面孔：`FromRequest`**
+## 第一步：理解 `Json`/`Form` 的 content-type 约束
+
+axum 的 `Json<T>` 解析 body 前会检查 `Content-Type: application/json`；`Form<T>` 检查 `application/x-www-form-urlencoded`。content-type 不对直接 rejection（415）。
+
+````rust
+use axum::{routing::post, Json, Form};
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+struct Payload { foo: String }
+
+async fn json_handler(Json(p): Json<Payload>) -> String {
+    p.foo
+}
+
+async fn form_handler(Form(p): Form<Payload>) -> String {
+    p.foo
+}
+
+# fn app() -> axum::Router {
+#     axum::Router::new()
+#         .route("/json", post(json_handler))
+#         .route("/form", post(form_handler))
+# }
+````
+
+发错 content-type 直接 415：
+
+````bash
+curl -X POST http://127.0.0.1:3000/json \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  -d 'foo=bar'
+# 415 Unsupported Media Type
+````
+
+> **新面孔：content-type 严格匹配**
 >
-> 和 `FromRequestParts`（ch10/12）不同，`FromRequest` 能消费整个请求 body。自定义 `JsonOrForm<T>` 需要它来根据 content-type 选择解析方式。
+> axum 的 `Json`/`Form` 都严格匹配 content-type，不是"试试看能不能解析"。这避免了 JSON 接口被发 form 数据污染。
+>
+> 但有时候想一个接口同时支持两种格式（如兼容旧版 form 客户端 + 新版 JSON 客户端），这就要自定义 extractor。
+
+---
+
+## 第二步：`JsonOrForm<T>` extractor 按 content-type 分发
+
+写一个泛型 extractor `JsonOrForm<T>`：检查 `Content-Type`，是 JSON 就走 `Json<T>`，是 form 就走 `Form<T>`，其他返回 415。
+
+````rust
+use axum::{
+    extract::{FromRequest, Request},
+    http::{header::CONTENT_TYPE, StatusCode},
+    response::{IntoResponse, Response},
+    Form, Json,
+};
+
+struct JsonOrForm<T>(T);
+
+impl<S, T> FromRequest<S> for JsonOrForm<T>
+where
+    S: Send + Sync,
+    Json<T>: FromRequest<()>,
+    Form<T>: FromRequest<()>,
+    T: 'static,
+{
+    type Rejection = Response;
+
+    async fn from_request(req: Request, _state: &S) -> Result<Self, Self::Rejection> {
+        let content_type_header = req.headers().get(CONTENT_TYPE);
+        let content_type = content_type_header.and_then(|value| value.to_str().ok());
+
+        if let Some(content_type) = content_type {
+            if content_type.starts_with("application/json") {
+                let Json(payload) = req.extract().await.map_err(IntoResponse::into_response)?;
+                return Ok(Self(payload));
+            }
+
+            if content_type.starts_with("application/x-www-form-urlencoded") {
+                let Form(payload) = req.extract().await.map_err(IntoResponse::into_response)?;
+                return Ok(Self(payload));
+            }
+        }
+
+        Err(StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response())
+    }
+}
+````
 
 > **新面孔：`RequestExt::extract`**
 >
-> 在自定义 extractor 内部复用其他 extractor：`req.extract::<Json<T>>().await` 从同一个 request 里运行 `Json<T>` 提取。
+> `req.extract::<T>().await` 在 `Request` 上直接调用 extractor `T`。这章在 `JsonOrForm` 里调 `req.extract().await` 触发 `Json<T>` 或 `Form<T>`（类型由左侧 `let Json(payload) = ...` 推导）。
+>
+> 相当于"在当前 request 上重新跑一遍某个 extractor"——避免手写 JSON/form 解析。
 
+> **新面孔：`CONTENT_TYPE` 头检查**
+>
+> `req.headers().get(CONTENT_TYPE)` 拿 content-type 头。`to_str().ok()` 转 `&str`（头可能含非 ASCII，转失败用 `ok()` 容错成 None）。
+>
+> `content_type.starts_with("application/json")` 用 starts_with 因为 content-type 可能带 charset：`application/json; charset=utf-8`。
+
+> **新面孔：`StatusCode::UNSUPPORTED_MEDIA_TYPE`（415）**
+>
+> 客户端发了不支持的 content-type 时返回 415。比 400 Bad Request 更准确——告诉客户端"换个 content-type 重试"。
+
+> **新面孔：`FromRequest<()>` 约束**
+>
+> `Json<T>: FromRequest<()>, Form<T>: FromRequest<()>` 约束表示这两个 extractor 不依赖 state（`State = ()`）。因为我们用 `req.extract()`（不需要 state），约束成 `()` 保证能调。
+>
+> 复杂约束写起来繁琐，但保证类型安全。
+
+---
+
+## 第三步：完整 handler
+
+最后用 `JsonOrForm<Payload>` 作为 handler 参数，同时支持 JSON 和表单。
+
+````rust
+use axum::{routing::post, Router, RequestExt};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Payload {
+    foo: String,
+}
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::registry()
+        .with(/* tracing 初始化 */)
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let app = Router::new().route("/", post(handler));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    tracing::debug!("listening on {}", listener.local_addr().unwrap());
+    axum::serve(listener, app).await.unwrap();
+}
+
+async fn handler(JsonOrForm(payload): JsonOrForm<Payload>) {
+    dbg!(payload);
+}
+````
+
+验证：
+
+````bash
+cd examples
+cargo run -p example-parse-body-based-on-content-type
+
+# JSON
+curl -X POST http://127.0.0.1:3000/ \
+  -H 'content-type: application/json' \
+  -d '{"foo":"bar"}'
+
+# Form
+curl -X POST http://127.0.0.1:3000/ \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  -d 'foo=bar'
+
+# 不支持的 content-type
+curl -X POST http://127.0.0.1:3000/ \
+  -H 'content-type: text/plain' \
+  -d 'plain text'
+# 415 Unsupported Media Type
+````
+
+服务端两种格式都能看到 `[Payload { foo: "bar" }]`。
+
+---
 
 ## 完整代码
 
@@ -67,9 +228,7 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
         .unwrap();
-
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-
     axum::serve(listener, app).await;
 }
 
@@ -119,107 +278,65 @@ where
 ````bash
 cd examples
 cargo run -p example-parse-body-based-on-content-type
+
+# JSON 和 Form 都接受
+curl -X POST http://127.0.0.1:3000/ -H 'content-type: application/json' -d '{"foo":"bar"}'
+curl -X POST http://127.0.0.1:3000/ -H 'content-type: application/x-www-form-urlencoded' -d 'foo=bar'
 ````
-
-发送 JSON:
-
-````bash
-curl -i -X POST http://127.0.0.1:3000/ \
-  -H 'content-type: application/json' \
-  -d '{"foo":"from json"}'
-````
-
-发送表单:
-
-````bash
-curl -i -X POST http://127.0.0.1:3000/ \
-  -H 'content-type: application/x-www-form-urlencoded' \
-  -d 'foo=from-form'
-````
-
-两个请求都应成功,服务端终端打印 `Payload { foo: ... }`。这个 handler 不返回响应体,成功主要看 `dbg!` 输出。
-
-发送不支持的 content type:
-
-````bash
-curl -i -X POST http://127.0.0.1:3000/ \
-  -H 'content-type: text/plain' \
-  -d 'foo=bar'
-````
-
-预期 `HTTP/1.1 415 Unsupported Media Type`。
 
 ## 解读
 
-### `content-type` 决定怎么解析 body
+### 自定义 extractor 复用已有 extractor 模式
 
-HTTP 请求 body 只是一串字节。同样提交 `foo=bar`,JSON 和表单格式完全不同:
+这章核心技巧：**在自定义 `FromRequest` 实现里，用 `req.extract()` 调用其他已有 extractor**，避免重写解析逻辑。
 
 ```text
-content-type: application/json                    body: {"foo":"bar"}
-content-type: application/x-www-form-urlencoded   body: foo=bar
+JsonOrForm<T>::from_request(req):
+    检查 Content-Type
+    ↓ JSON
+    req.extract::<Json<T>>()  → 复用 axum::Json
+    ↓ Form
+    req.extract::<Form<T>>()  → 复用 axum::Form
+    ↓ 其他
+    返回 415
 ```
 
-`JsonOrForm<T>` 看请求头的 `content-type` 决定用 `Json<T>` 还是 `Form<T>` 解析。
+同样的模式可写：`CsvOrJson<T>`、`XmlOrJson<T>`、`AutoCompress<T>`（按 Content-Encoding 自动解压）。
 
-### 自定义 extractor = 实现 `FromRequest`
+### content-type 协商
 
-`FromRequest` 是 axum 的提取器 trait。一个类型实现了 `FromRequest`,就能放进 handler 参数:
+RESTful API 常用 content-type 协商（一个接口支持多种格式）：
 
-````rust
-struct JsonOrForm<T>(T);
+- 现代客户端发 JSON
+- 老客户端发 form（HTML 表单）
+- 内部 API 可能用 Protobuf/MessagePack
 
-impl<S, T> FromRequest<S> for JsonOrForm<T>
-where
-    ...
-{
-    type Rejection = Response;
+这章的 `JsonOrForm` 是这个模式的简化版。
 
-    async fn from_request(req: Request, _state: &S) -> Result<Self, Self::Rejection> {
-        ...
-    }
-}
-````
+## 常见问题
 
-`JsonOrForm<T>` 是 tuple struct,只包装最终解析出来的 `T`。为什么不直接返回 `T`?因为 extractor 需要一个类型来实现 `FromRequest`——我们创建 `JsonOrForm<T>` 就是告诉 axum:handler 参数里出现这个类型时,调用我们写的提取逻辑。
+**为什么用 `req.extract()` 而不是 `Json::from_request(req, &())`？** `extract()` 是 `RequestExt` 的便捷方法，等价于 `T::from_request(req, &())` 但更简洁。两者本质一样。
 
-泛型约束第一遍不用死记,重点是:`JsonOrForm<T>` 内部复用 axum 已写好的 `Json<T>` 和 `Form<T>`。
+**怎么扩展支持更多格式？** 加 `if content_type.starts_with("application/xml")` 分支，调 `req.extract::<Xml<T>>()`（用 `quick-xml` 等库的 extractor）。
 
-### `req.extract()` 复用其他 extractor
-
-````rust
-let Json(payload) = req.extract().await.map_err(IntoResponse::into_response)?;
-````
-
-`req.extract()` 来自 `RequestExt` trait,作用是"从当前 Request 里运行另一个 extractor"。所以 JSON 分支实际调用 `Json<T>` 的提取逻辑,表单分支实际调用 `Form<T>` 的提取逻辑。`map_err(IntoResponse::into_response)?` 把提取失败的错误转成 `Response`,符合 `type Rejection = Response`。
-
-### `starts_with` 兼容 charset
-
-`content_type.starts_with("application/json")` 能匹配 `application/json` 也能匹配 `application/json; charset=utf-8`。
-
-### 请求体只能消费一次
-
-进入 JSON 分支消费了请求体后,就不能再拿同一个 request 去试 Form 分支。所以必须先判断格式,再选择一种解析方式。
-
-### 415 Unsupported Media Type
-
-不支持的 content-type 返回 415——"请求体格式服务端不支持"。
+**multipart/form-data 怎么办？** 不行——multipart 的 `T` 不是简单的 `Deserialize`，要用 `Multipart` extractor（ch07）单独处理。
 
 ## 手写任务
 
-跑通后做三个小改动:
-
-1. 给 `Payload` 加 `bar: String` 字段,分别用 JSON 和表单提交。
-2. 把不支持类型的错误从 415 改成返回文本 `unsupported content-type`。
-3. 确认 `starts_with` 已经覆盖 `application/x-www-form-urlencoded; charset=utf-8`。
+1. 加 XML 支持：`content-type.starts_with("application/xml")` 时调 `quick-xml` 解析。
+2. 加错误响应 body：415 时返回 `{"error": "unsupported", "received": "...", "expected": ["json", "form"]}`。
+3. 写 `CsvOrJson<T>` extractor 支持 CSV。
+4. 把 `JsonOrForm<T>` 改成 middleware（在每个 handler 前运行），对比哪种更合适。
 
 ## 小结
 
-- `content-type` 告诉服务端如何解释请求 body。
-- 自定义 extractor 要实现 `FromRequest`,放进 handler 参数即可生效。
-- `RequestExt::extract()` 在自定义 extractor 里复用其他 extractor。
-- 请求体只能消费一次,必须先判断格式再选一种解析方式。
-- 不支持的 content-type 返回 415。
+这章用 3 步讲了 content-type 协商：
+
+1. **理解约束**：`Json`/`Form` 各自严格匹配 content-type，发错就 415。
+2. **`JsonOrForm<T>` extractor**：检查 content-type 分发到 `Json<T>` 或 `Form<T>`，其他返回 415。
+3. **`RequestExt::extract`**：在自定义 extractor 里复用已有 extractor，避免重写解析。
+
+核心模式：**自定义 extractor 复用已有 extractor**——`req.extract::<T>().await` 在 request 上调 extractor T，是这章的关键 API。
 
 ## 源码对照
 

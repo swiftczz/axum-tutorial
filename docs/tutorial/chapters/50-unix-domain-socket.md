@@ -2,11 +2,13 @@
 
 对应示例：`examples/unix-domain-socket`
 
-理解 axum 如何监听 Unix domain socket(UDS)而不是 TCP 端口,并为 UDS 提供自定义 `ConnectInfo`。UDS 用于同一台机器上的进程通信。
+Unix Domain Socket（UDS）是一种**不走 TCP/IP 网络栈**的本地 IPC 机制——两台进程通过文件系统路径（如 `/tmp/axum/helloworld`）通信，不经过网卡、不序列化成网络包，比 TCP localhost 快很多。常见场景：反向代理（Nginx）→ 后端服务、docker 容器内通信、systemd 服务。
 
+axum 通过 `axum::serve` 直接支持 UDS listener，唯一特别的地方是**连接信息**：UDS 没有远程 IP/端口，对应的是 `peer_addr`（socket 文件地址）和 `peer_cred`（PID/UID/GID）。
 
+分 3 步：先建 UDS server + handler，再加自定义 `UdsConnectInfo` 拿到 peer 凭证，最后用 hyper 客户端测试。
 
-相比前面章节新引入：**`UnixListener`（绑定文件路径）、自定义 `Connected` trait、`UCred` 对端凭据**。
+相比前面章节新引入：**`UnixListener`、`into_make_service_with_connect_info`、`Connected` trait 自定义连接信息、hyper client over UDS**。
 
 ## Cargo.toml
 
@@ -28,17 +30,222 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## 关键概念
+---
 
-> **新面孔：`UnixListener` + 自定义 `Connected`**
+## 第一步：UDS server 骨架
+
+先用 `UnixListener` 绑一个 socket 文件路径，然后用 `axum::serve` 启动——和 TCP 版几乎一样，只是 listener 换成 Unix 版。
+
+````rust
+#[cfg(unix)]
+#[tokio::main]
+async fn main() {
+    unix::server().await;
+}
+
+#[cfg(not(unix))]
+fn main() {
+    println!("This example requires unix")
+}
+
+#[cfg(unix)]
+mod unix {
+    use axum::{routing::get, Router};
+    use std::path::PathBuf;
+    use tokio::net::UnixListener;
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+    pub async fn server() {
+        tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "debug".into()),
+            )
+            .with(tracing_subscriber::fmt::layer())
+            .init();
+
+        let path = PathBuf::from("/tmp/axum/helloworld");
+
+        // 清理可能残留的旧 socket 文件（bind 会因文件已存在而失败）
+        let _ = tokio::fs::remove_file(&path).await;
+        tokio::fs::create_dir_all(path.parent().unwrap())
+            .await
+            .unwrap();
+
+        let uds = UnixListener::bind(path.clone()).unwrap();
+        tokio::spawn(async move {
+            let app = Router::new().route("/", get(handler));
+            axum::serve(uds, app).await;
+        });
+
+        // 这里先留空，下一步加客户端测试
+    }
+
+    async fn handler() -> &'static str {
+        "Hello, World!"
+    }
+}
+````
+
+> **新面孔：`UnixListener`**
 >
-> UDS 绑定文件路径不是端口。`Connected` trait 告诉 axum 怎么提取连接信息（`peer_addr` + `peer_cred`）。客户端用 `UnixStream` + Hyper。
+> tokio 的 Unix domain socket listener，API 和 `TcpListener` 几乎一样：`bind(path)` 绑定 socket 文件，`axum::serve(uds, app)` 直接复用 axum 的 server。
+>
+> 关键差异：**bind 前要先删旧 socket 文件**——`bind` 遇到已存在的文件会失败。`let _ = tokio::fs::remove_file(&path).await;` 用 `let _ =` 因为第一次运行时文件不存在，忽略错误。
 
+> **新面孔：`#[cfg(unix)]`**
+>
+> UDS 是 Unix 独有的（Windows 没有等价物），所以代码用 `#[cfg(unix)]` 包起来。非 Unix 平台走 `#[cfg(not(unix))]` 分支只打印一行提示。这样跨平台编译不会出错。
+
+---
+
+## 第二步：`UdsConnectInfo` 拿到 peer 凭证
+
+UDS 没有远程 IP，但能拿到 socket 文件地址和**进程凭证**（PID/UID/GID）。这步定义 `UdsConnectInfo` 并通过 `into_make_service_with_connect_info` 注入。
+
+````rust
+use axum::{
+    extract::connect_info::{self, ConnectInfo},
+    serve::IncomingStream,
+};
+use std::sync::Arc;
+use tokio::net::{unix::UCred, UnixListener};
+
+# #[cfg(unix)]
+# mod unix {
+#     use axum::{routing::get, Router};
+#     use tokio::net::UnixListener;
+#     pub async fn server() {
+#         // ...
+
+        let uds = UnixListener::bind(path.clone()).unwrap();
+        tokio::spawn(async move {
+            let app = Router::new()
+                .route("/", get(handler))
+                .into_make_service_with_connect_info::<UdsConnectInfo>();
+            axum::serve(uds, app).await;
+        });
+#     }
+
+    // handler 通过 ConnectInfo extractor 拿到 UdsConnectInfo
+    async fn handler(ConnectInfo(info): ConnectInfo<UdsConnectInfo>) -> &'static str {
+        println!("new connection from `{info:?}`");
+        "Hello, World!"
+    }
+
+    // 自定义连接信息：包含 peer_addr 和 peer_cred
+    #[derive(Clone, Debug)]
+    #[allow(dead_code)]
+    struct UdsConnectInfo {
+        peer_addr: Arc<tokio::net::unix::SocketAddr>,
+        peer_cred: UCred,
+    }
+
+    // 实现 Connected trait，告诉 axum 怎么从 IncomingStream 提取连接信息
+    impl connect_info::Connected<IncomingStream<'_, UnixListener>> for UdsConnectInfo {
+        fn connect_info(stream: IncomingStream<'_, UnixListener>) -> Self {
+            let peer_addr = stream.io().peer_addr().unwrap();
+            let peer_cred = stream.io().peer_cred().unwrap();
+            Self {
+                peer_addr: Arc::new(peer_addr),
+                peer_cred,
+            }
+        }
+    }
+# }
+````
+
+> **新面孔：`into_make_service_with_connect_info`**
+>
+> `Router::into_make_service()` 不带连接信息（handler 拿不到 remote IP/peer）。`into_make_service_with_connect_info::<T>()` 让 axum 在建立连接时提取一个 `T` 注入到 request extensions，handler 能通过 `ConnectInfo<T>` extractor 取到。
+>
+> `T` 必须实现 `Connected<I>`，告诉 axum 怎么从 `I`（这里是 `IncomingStream<UnixListener>`）构造 `T`。
+
+> **新面孔：`Connected` trait**
+>
+> `connect_info::Connected<I>` 是 axum 的 trait，定义"如何从连接类型 `I` 提取连接信息"。我们实现的版本：
+>
+> ```rust
+> impl Connected<IncomingStream<'_, UnixListener>> for UdsConnectInfo {
+>     fn connect_info(stream: IncomingStream<'_, UnixListener>) -> Self {
+>         let peer_addr = stream.io().peer_addr().unwrap();  // socket 文件地址
+>         let peer_cred = stream.io().peer_cred().unwrap();  // PID/UID/GID
+>         Self { peer_addr, peer_cred }
+>     }
+> }
+> ```
+>
+> `stream.io()` 拿到底层 `UnixStream`，`.peer_addr()` / `.peer_cred()` 是 tokio 提供的方法。`UCred` 在 Linux 上是 `(uid, gid, pid)`，在 macOS 上是 `(uid, gid)`（无 PID）。
+
+> **新面孔：`ConnectInfo<T>` extractor**
+>
+> 第 5 章 handle-head-request 没用过，但 `ConnectInfo<T>` 是 axum 标准 extractor，能从 request extensions 拿到连接信息。这里 `T = UdsConnectInfo`。
+>
+> TCP server 用 `ConnectInfo<SocketAddr>`，UDS 用我们自定义的 `ConnectInfo<UdsConnectInfo>`。
+
+---
+
+## 第三步：用 hyper client over UDS 测试
+
+测试 UDS server 不能用 curl（curl 的 UDS 支持有限）。这步用 hyper 客户端通过 UDS 连进来发请求。
+
+````rust
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use http_body_util::BodyExt;
+use hyper_util::rt::TokioIo;
+use tokio::net::UnixStream;
+
+# pub async fn server() {
+#     // ... 前两步的 server 代码 ...
+
+        let uds = UnixListener::bind(path.clone()).unwrap();
+        tokio::spawn(async move {
+            let app = Router::new()
+                .route("/", get(handler))
+                .into_make_service_with_connect_info::<UdsConnectInfo>();
+            axum::serve(uds, app).await;
+        });
+
+        // 测试客户端：通过 UDS 连接 server
+        let stream = TokioIo::new(UnixStream::connect(path).await.unwrap());
+        let (mut sender, conn) = hyper::client::conn::http1::handshake(stream).await.unwrap();
+        tokio::task::spawn(async move {
+            if let Err(err) = conn.await {
+                println!("Connection failed: {err:?}");
+            }
+        });
+
+        // URL 的 host 不重要（UDS 不走 DNS），路径是 /
+        let request = Request::get("http://uri-doesnt-matter.com")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = sender.send_request(request).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = response.collect().await.unwrap().to_bytes();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert_eq!(body, "Hello, World!");
+# }
+````
+
+> **新面孔：`TokioIo` 包装**
+>
+> hyper 1.x 的 `handshake` 要求 IO 类型实现 `hyper::rt` 的 Read/Write traits，tokio 的 `UnixStream` 实现的是 `tokio::io` 的 AsyncRead/AsyncWrite。`TokioIo::new(stream)` 把 tokio IO 适配成 hyper IO。
+
+> **新面孔：`hyper::client::conn::http1::handshake`**
+>
+> hyper 1.x 的低层 client API：建立一条 HTTP/1.1 连接，返回 `(sender, conn_future)`。`sender.send_request(req)` 发请求，`conn` 是连接生命周期 future（要 spawn 起来维持连接）。
+>
+> URL `http://uri-doesnt-matter.com` 的 host 无意义——UDS 走文件路径不走 DNS，只看 path（这里是 `/`）。
+
+---
 
 ## 完整代码
 
 ````rust
-// Unix domain socket 是 Unix 平台能力,只在 unix 平台编译 main
 #[cfg(unix)]
 #[tokio::main]
 async fn main() {
@@ -78,10 +285,11 @@ mod unix {
         let path = PathBuf::from("/tmp/axum/helloworld");
 
         let _ = tokio::fs::remove_file(&path).await;
-        tokio::fs::create_dir_all(path.parent().unwrap()).await.unwrap();
+        tokio::fs::create_dir_all(path.parent().unwrap())
+            .await
+            .unwrap();
 
         let uds = UnixListener::bind(path.clone()).unwrap();
-
         tokio::spawn(async move {
             let app = Router::new()
                 .route("/", get(handler))
@@ -90,9 +298,7 @@ mod unix {
             axum::serve(uds, app).await;
         });
 
-        // 本地客户端验证:通过 UnixStream 连 socket 文件
         let stream = TokioIo::new(UnixStream::connect(path).await.unwrap());
-
         let (mut sender, conn) = hyper::client::conn::http1::handshake(stream).await.unwrap();
         tokio::task::spawn(async move {
             if let Err(err) = conn.await {
@@ -100,7 +306,6 @@ mod unix {
             }
         });
 
-        // URI host 不重要,真实连接已由 UnixStream 建好
         let request = Request::get("http://uri-doesnt-matter.com")
             .body(Body::empty())
             .unwrap();
@@ -116,6 +321,7 @@ mod unix {
 
     async fn handler(ConnectInfo(info): ConnectInfo<UdsConnectInfo>) -> &'static str {
         println!("new connection from `{info:?}`");
+
         "Hello, World!"
     }
 
@@ -146,105 +352,60 @@ cd examples
 cargo run -p example-unix-domain-socket
 ````
 
-示例自己启动服务并用 UnixStream 发请求,断言通过说明返回了 `Hello, World!`。
+例子自带断言（看到正常退出无 panic 即成功）。如果想手动测，需要支持 UDS 的客户端（如 `socat`、`curl --unix-socket`）：
+
+````bash
+# 用 curl 7.40+ 测（--unix-socket 选项）
+curl --unix-socket /tmp/axum/helloworld http://localhost/
+````
+
+server 端日志会打印 `new connection from UdsConnectInfo { peer_addr: ..., peer_cred: ... }`。
 
 ## 解读
 
-### 什么时候用 UDS
+### UDS vs TCP
 
-UDS 适合本机进程之间通信:Nginx 反向代理到本机应用、systemd socket activation、本机 sidecar、本地工具调后台服务。**不走网络端口**,访问权限通过文件路径和文件权限控制。
+| 维度 | TCP localhost | UDS |
+| --- | --- | --- |
+| 协议 | 走完整 IP/TCP 栈 | 不走网络栈，纯内核 IPC |
+| 地址 | `127.0.0.1:port` | 文件路径（如 `/tmp/axum/helloworld`） |
+| 速度 | 慢（序列化、校验和、ack） | 快 2-3 倍 |
+| peer 标识 | IP + 端口 | socket 文件地址 + 进程凭证（PID/UID/GID） |
+| 用法 | 跨机器 | 同机器 |
 
-### 只在 Unix 平台
+### peer_cred 的用途
 
-````rust
-#[cfg(unix)]
-#[tokio::main]
-async fn main() { unix::server().await; }
+UDS 能拿到对端进程的 UID/GID/PID——TCP 做不到。用途：
 
-#[cfg(not(unix))]
-fn main() { println!("This example requires unix") }
-````
-
-UDS 是 Unix 平台能力,非 Unix 系统直接打印提示。
-
-### 绑定文件路径而不是端口
-
-````rust
-let path = PathBuf::from("/tmp/axum/helloworld");
-let _ = tokio::fs::remove_file(&path).await;                    // 先删旧 socket 文件
-tokio::fs::create_dir_all(path.parent().unwrap()).await.unwrap();  // 确保父目录存在
-let uds = UnixListener::bind(path.clone()).unwrap();
-````
-
-UDS 监听文件路径(`/tmp/axum/helloworld`)不是端口。**先删旧 socket 文件**——如果旧文件还在 `UnixListener::bind` 可能失败。后面 `axum::serve(uds, app)` 仍能处理这个 listener。
-
-### 自定义 `UdsConnectInfo`
-
-````rust
-#[derive(Clone, Debug)]
-struct UdsConnectInfo {
-    peer_addr: Arc<tokio::net::unix::SocketAddr>,
-    peer_cred: UCred,    // 对端进程的用户等凭据信息
-}
-
-impl connect_info::Connected<IncomingStream<'_, UnixListener>> for UdsConnectInfo {
-    fn connect_info(stream: IncomingStream<'_, UnixListener>) -> Self {
-        let peer_addr = stream.io().peer_addr().unwrap();
-        let peer_cred = stream.io().peer_cred().unwrap();
-        Self { peer_addr: Arc::new(peer_addr), peer_cred }
-    }
-}
-````
-
-UDS 连接信息不是 `SocketAddr`。`Connected` trait 告诉 axum:当 UnixListener 连接进来时如何从 stream 提取连接信息(`peer_addr` + `peer_cred`)。然后 handler 用 `ConnectInfo(info): ConnectInfo<UdsConnectInfo>`。
-
-### 启动服务
-
-````rust
-let app = Router::new()
-    .route("/", get(handler))
-    .into_make_service_with_connect_info::<UdsConnectInfo>();   // 注册自定义 ConnectInfo 类型
-
-axum::serve(uds, app).await;
-````
-
-因为 handler 需 `ConnectInfo<UdsConnectInfo>`,要用 `into_make_service_with_connect_info::<UdsConnectInfo>()`(对比第 41 章 TCP 的 `into_make_service_with_connect_info::<SocketAddr>()`)。
-
-### 客户端通过 UnixStream
-
-````rust
-let stream = TokioIo::new(UnixStream::connect(path).await.unwrap());
-let (mut sender, conn) = hyper::client::conn::http1::handshake(stream).await.unwrap();
-// ...
-let request = Request::get("http://uri-doesnt-matter.com").body(Body::empty()).unwrap();
-````
-
-创建 UnixStream 连接 socket 文件,用 hyper HTTP/1 client handshake 把它当 HTTP 连接用。**URI host 不重要**——真实连接已由 UnixStream 建好。
+- 用 UID 做访问控制（只允许 root 或特定用户连）
+- 用 PID 追踪哪个进程在调用
+- systemd 服务间认证
 
 ## 常见问题
 
-**为什么删旧 socket 文件?** UDS 绑定路径时如果旧文件还在,bind 可能失败。
+**为什么必须先 `remove_file`？** `UnixListener::bind` 遇到已存在的 socket 文件会失败。每次启动要清理残留。
 
-**URI 为什么写 `uri-doesnt-matter`?** 真实连接目标是 UnixStream 不是 URI 里的 host。
+**Windows 能用吗？** 不能。UDS 是 Unix 独有，所以代码用 `#[cfg(unix)]` 包起来。
 
-**Windows 能跑吗?** 用 `#[cfg(unix)]`,非 Unix 系统只打印提示。
+**为什么用 hyper client 不用 reqwest？** reqwest 不直接支持 UDS。hyper 1.x 的低层 API 能把任意 IO（包括 UDS）包装成 HTTP 连接。
+
+**URL host 为什么不重要？** UDS 走文件路径不走 DNS，host 字段被忽略，只看 path。
 
 ## 手写任务
 
-1. 创建 `/tmp/axum/helloworld` 路径。
-2. 删除旧 socket 文件。
-3. 绑定 `UnixListener`。
-4. 写 `UdsConnectInfo` 并实现 `Connected`。
-5. `axum::serve(uds, app)` 启动。
-6. `UnixStream` + Hyper client 发测试请求。
+1. 把 `handler` 改成返回 `peer_cred` 的 UID（`info.peer_cred.uid()`）。
+2. 把 socket 路径改成相对路径 `./helloworld.sock`，观察权限问题。
+3. 加一个 middleware，只允许特定 UID 的连接（否则 403）。
 
 ## 小结
 
-- UDS 版 axum 核心:`UnixListener` 替代 `TcpListener`,`UnixStream` 替代 TCP stream,自定义 `Connected` 提取 UDS 连接信息(`peer_addr` + `peer_cred`),HTTP 协议仍跑在这个 stream 上。
-- UDS 监听文件路径不是端口;绑定前先删旧 socket 文件,否则 bind 可能失败。
-- UDS 适合本机进程通信(Nginx 反代、systemd socket activation、sidecar),不走网络,访问权限通过文件权限控制。
-- 只 Unix 平台有;客户端通过 `UnixStream` + hyper handshake 连接,URI host 不重要。
-- `into_make_service_with_connect_info::<UdsConnectInfo>()` 注册自定义 ConnectInfo 类型(对比 TCP 的 `::<SocketAddr>()`)。
+这章用 3 步讲了 axum 的 Unix Domain Socket 支持：
+
+1. **UDS server**：`UnixListener::bind(path)` + `axum::serve(uds, app)`，bind 前要 `remove_file` 清残留。
+2. **`UdsConnectInfo`**：实现 `Connected<IncomingStream<UnixListener>>` 提取 `peer_addr` + `peer_cred`，通过 `into_make_service_with_connect_info::<UdsConnectInfo>()` 注入。
+3. **hyper client 测试**：`TokioIo::new(UnixStream)` + `hyper::client::conn::http1::handshake`，URL host 无意义。
+
+核心：UDS 不走网络栈，比 TCP localhost 快；axum 的 `axum::serve` 同时支持 TCP 和 UDS listener；`ConnectInfo<T>` extractor 让 handler 拿到连接元信息（TCP 是 SocketAddr，UDS 是自定义 `UdsConnectInfo` 含进程凭证）。
 
 ## 源码对照
 

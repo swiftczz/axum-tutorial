@@ -2,11 +2,11 @@
 
 对应示例：`examples/sse`
 
-SSE(Server-Sent Events)适合服务端持续推送消息给浏览器。用 axum 的 `Sse` 返回服务端事件流,理解 EventSource、Stream、keep-alive、SSE 集成测试。
+WebSocket（ch41）是双向通信。**Server-Sent Events（SSE）** 是单向的——server 向 client 推流式事件，client 不能回消息。比 WebSocket 简单：基于 HTTP、不需要 upgrade、自带断线重连。适合**实时通知、消息推送、流式响应**（如 ChatGPT 的逐字输出）。
 
+分 2 步：先写最简 SSE handler（每秒推一个 "hi!"），再加 `keep_alive` 防止代理超时断连。
 
-
-相比前面章节新引入：**SSE（Server-Sent Events）、`Sse<Stream>`、`Event::default().data(...)`、`keep_alive`**。
+相比前面章节新引入：**`Sse<Stream>` 响应类型、`Event` 数据结构、`stream::repeat_with` + `throttle` 造流、`KeepAlive` 心跳**。
 
 ## Cargo.toml
 
@@ -18,29 +18,175 @@ edition = "2024"
 publish = false
 
 [dependencies]
-axum = "0.8"
+axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.12", features = ["typed-header"] }
-futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 headers = "0.4"
 tokio = { version = "1.0", features = ["full"] }
 tokio-stream = "0.1"
-tower-http = { version = "0.6.1", features = ["fs", "trace"] }
+tower-http = { version = "0.6", features = ["fs", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 eventsource-stream = "0.2"
-reqwest = { version = "0.12", default-features = false, features = ["stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 ````
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## 关键概念
+---
 
-> **新面孔：SSE（Server-Sent Events）**
+## 第一步：最简 SSE——每秒推一个事件
+
+SSE handler 返回 `Sse<Stream<Item = Result<Event, _>>>`——一个能不断 yield `Event` 的 stream。axum 把 stream 里的每个 event 编码成 SSE 格式（`data: xxx\n\n`）发给客户端。
+
+````rust
+use axum::{
+    response::sse::{Event, Sse},
+    routing::get,
+    Router,
+};
+use axum_extra::TypedHeader;
+use futures_util::stream::{self, Stream};
+use std::{convert::Infallible, time::Duration};
+use tokio_stream::StreamExt as _;
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::registry()
+        .with(/* tracing 初始化 */)
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let app = Router::new().route("/sse", get(sse_handler));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+
+async fn sse_handler(
+    TypedHeader(user_agent): TypedHeader<headers::UserAgent>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    println!("`{}` connected", user_agent.as_str());
+
+    // 一个每秒 yield Event 的 stream
+    let stream = stream::repeat_with(|| Event::default().data("hi!"))
+        .map(Ok)
+        .throttle(Duration::from_secs(1));
+
+    Sse::new(stream)
+}
+````
+
+验证：
+
+````bash
+cd examples
+cargo run -p example-sse
+
+curl -N http://127.0.0.1:3000/sse
+# data: hi!
+#
+# data: hi!
+#
+# data: hi!
+# ...（每秒一行）
+````
+
+`-N` 禁用 curl 缓冲，立刻看到流式输出。
+
+> **新面孔：`Sse<Stream>`**
 >
-> 服务端→客户端单向推送（WebSocket 是双向）。`Sse<Stream>` 把 Rust stream 变成 SSE 响应。`keep_alive` 防长连接被代理断开。
+> axum 的 SSE 响应类型。`Sse::new(stream)` 包一个 `Stream<Item = Result<Event, _>>`，axum 自动把每个 event 编码成 SSE 文本格式（`data: <content>\n\n`）发给客户端。
+>
+> SSE 的 `Content-Type: text/event-stream` 是 axum 自动设的。
 
+> **新面孔：`Event`**
+>
+> SSE 事件数据结构。`Event::default().data("hi!")` 创建一个带 data 字段的事件。其他字段：
+> - `.event("login")`：事件类型（client 用 `addEventListener("login", ...)`）
+> - `.id("123")`：事件 ID（断线重连用 `Last-Event-ID` header 续传）
+> - `.retry(5000)`：client 重连间隔（毫秒）
+
+> **新面孔：`stream::repeat_with` + `throttle`**
+>
+> `futures_util::stream` 提供的 stream 工厂。`repeat_with(closure)` 无限调闭包产 item；`.throttle(duration)` 每 duration 才放一个 item 通过。
+>
+> 这章组合成"每秒产一个 Event"的无限 stream。生产环境换成真实数据源（如 `tokio::sync::broadcast` 接收端、数据库变更流等）。
+
+> **新面孔：`TypedHeader<headers::UserAgent>`**
+>
+> 类型安全提取 User-Agent 头。`headers::UserAgent` 来自 `headers` crate，`TypedHeader<UserAgent>` 自动解析和验证。和 ch39 OAuth 用的 `TypedHeader<headers::Cookie>` 同款机制。
+
+---
+
+## 第二步：加 `KeepAlive` 防止代理超时断连
+
+很多反向代理（Nginx 默认 60s）会**关闭空闲连接**——如果 SSE 一段时间没事件，代理以为连接死了就关掉。`KeepAlive` 周期发心跳注释（`: keep-alive-text\n\n`），保持连接"看起来活跃"。
+
+````rust
+use axum::response::sse::KeepAlive;
+
+async fn sse_handler(
+    TypedHeader(user_agent): TypedHeader<headers::UserAgent>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    println!("`{}` connected", user_agent.as_str());
+
+    let stream = stream::repeat_with(|| Event::default().data("hi!"))
+        .map(Ok)
+        .throttle(Duration::from_secs(1));
+
+    Sse::new(stream).keep_alive(
+        KeepAlive::new()
+            .interval(Duration::from_secs(1))
+            .text("keep-alive-text"),
+    )
+}
+````
+
+> **新面孔：`KeepAlive` 心跳**
+>
+> `Sse::new(stream).keep_alive(...)` 周期发心跳。源 stream 没事件时，`KeepAlive` 自动发一个注释（`: keep-alive-text\n\n`，以 `:` 开头是 SSE 注释客户端忽略）。代理看到流量就不会断。
+>
+> - `.interval(Duration)`：心跳间隔
+> - `.text(...)`：注释内容
+>
+> 不加 keep_alive 的话，如果业务事件稀疏（如每小时一次），连接可能在事件之间被代理关闭。
+
+### 测试 SSE
+
+测试 SSE 不能用普通 reqwest（要解析 SSE 流）。用 `eventsource-stream` crate 把 reqwest 的 bytes_stream 转成 SSE event stream：
+
+````rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eventsource_stream::Eventsource;
+    use tokio_stream::StreamExt;
+
+    #[tokio::test]
+    async fn integration_test() {
+        // 启动 app 在随机端口
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async { axum::serve(listener, app()).await.unwrap(); });
+
+        let mut event_stream = reqwest::Client::new()
+            .get(format!("http://127.0.0.1:{port}/sse"))
+            .header("User-Agent", "test")
+            .send().await.unwrap()
+            .bytes_stream()
+            .eventsource()
+            .take(1);  // 只取第一个事件
+
+        let event_data: Vec<String> = ...;
+        assert!(event_data[0] == "hi!");
+    }
+}
+````
+
+---
 
 ## 完整代码
 
@@ -68,19 +214,21 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // build our application
     let app = app();
 
+    // run it
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
         .unwrap();
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app).await;
 }
 
 fn app() -> Router {
     let assets_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
     let static_files_service = ServeDir::new(assets_dir).append_index_html_on_directories(true);
-
+    // build our application with a route
     Router::new()
         .fallback_service(static_files_service)
         .route("/sse", get(sse_handler))
@@ -92,6 +240,10 @@ async fn sse_handler(
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     println!("`{}` connected", user_agent.as_str());
 
+    // A `Stream` that repeats an event every second
+    //
+    // You can also create streams from tokio channels using the wrappers in
+    // https://docs.rs/tokio-stream
     let stream = stream::repeat_with(|| Event::default().data("hi!"))
         .map(Ok)
         .throttle(Duration::from_secs(1));
@@ -104,173 +256,70 @@ async fn sse_handler(
 }
 ````
 
-## assets/script.js
-
-````javascript
-var eventSource = new EventSource('sse');
-
-eventSource.onmessage = function(event) {
-    console.log('Message from server ', event.data);
-}
-````
-
 ## 运行
 
 ````bash
 cd examples
 cargo run -p example-sse
-````
 
-浏览器打开 `http://127.0.0.1:3000/`,Console 每秒看到:
-
-````text
-Message from server hi!
-````
-
-用 curl 看原始事件流(注意 `-N` 不缓冲):
-
-````bash
 curl -N http://127.0.0.1:3000/sse
 ````
 
-运行测试:
-
-````bash
-cargo test -p example-sse
-````
+或浏览器打开 `http://127.0.0.1:3000/`（自带前端 JS 用 `EventSource` 接收），看到 `hi!` 每秒出现。
 
 ## 解读
 
-### SSE vs 普通响应
+### SSE vs WebSocket vs 流式 HTTP
 
-```text
-普通响应:请求 → 服务端一次性返回 → 连接结束
-SSE:     请求 → 服务端返回事件流 → 连接保持打开 → 不断发送事件
+| 维度 | SSE | WebSocket（ch41） | 流式 HTTP（ch15） |
+| --- | --- | --- | --- |
+| 协议 | HTTP/1.1 或 HTTP/2 | HTTP upgrade 后切 WebSocket | 普通 HTTP |
+| 方向 | server → client 单向 | 双向 | server → client 单向 |
+| 重连 | 浏览器自动重连（Last-Event-ID 续传） | 手动实现 | 不支持 |
+| 代理穿透 | 好（就是 HTTP） | 需代理支持 upgrade | 好 |
+| 适合 | 通知、推送、流式响应 | 聊天、协作编辑 | 大文件下载 |
+
+**优先选 SSE**：简单（纯 HTTP）、自带重连、代理友好。只有需要双向才用 WebSocket。
+
+### SSE 的浏览器 API
+
+```javascript
+const es = new EventSource("/sse");
+es.onmessage = (e) => console.log(e.data);          // 默认事件
+es.addEventListener("login", (e) => {               // 自定义事件类型
+    console.log("logged in:", e.data);
+});
+es.onerror = () => { /* 浏览器自动重连 */ };
 ```
 
-SSE 是**单向**的(服务端 → 浏览器)。需要双向实时通信看 WebSocket(41 章起);只需服务端持续推送(通知/进度/日志/状态更新),SSE 更简单。
-
-### 静态文件 + SSE 路由
-
-````rust
-fn app() -> Router {
-    let assets_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
-    let static_files_service = ServeDir::new(assets_dir).append_index_html_on_directories(true);
-
-    Router::new()
-        .fallback_service(static_files_service)   // 静态文件兜底
-        .route("/sse", get(sse_handler))           // SSE 事件流
-        .layer(TraceLayer::new_for_http())
-}
-````
-
-`CARGO_MANIFEST_DIR` 是当前 crate 目录,比直接写 `"assets"` 稳定不受运行目录影响。`fallback_service` 表示没匹配到路由就去静态目录找文件(见 29 章 ServeDir)。
-
-### 前端 EventSource
-
-浏览器原生支持 `EventSource`,自动向 `/sse` 建立 SSE 连接,服务端发事件后触发 `onmessage`,`event.data` 是事件数据。
-
-### SSE handler 返回类型
-
-````rust
-async fn sse_handler(
-    TypedHeader(user_agent): TypedHeader<headers::UserAgent>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-````
-
-返回类型拆开:
-
-```text
-Sse<...>                          axum SSE 响应
-Stream<Item = Result<Event, _>>   不断产出 SSE Event 的流
-Event                             单个 SSE 事件
-Infallible                        这个 stream 不会产生错误
-```
-
-`TypedHeader(user_agent)` 从请求头提取 User-Agent,只为打印谁连接了。
-
-### 每秒一次的事件流
-
-````rust
-let stream = stream::repeat_with(|| Event::default().data("hi!"))
-    .map(Ok)
-    .throttle(Duration::from_secs(1));
-````
-
-- `stream::repeat_with(|| Event::default().data("hi!"))`:无限 stream,不断生成 `data: hi!` 事件。
-- `.map(Ok)`:把 `Event` 包成 `Result<Event, Infallible>`。
-- `.throttle(Duration::from_secs(1))`:每秒最多发一次。
-
-客户端每秒收到一个 `hi!`。
-
-### `Sse::new` + `keep_alive`
-
-````rust
-Sse::new(stream).keep_alive(
-    KeepAlive::new()
-        .interval(Duration::from_secs(1))
-        .text("keep-alive-text"),
-)
-````
-
-`Sse::new(stream)` 把 stream 包成 SSE HTTP 响应。`keep_alive` 定期发心跳避免连接长期空闲被代理/浏览器断开——长连接长时间没数据可能被浏览器/代理/负载均衡断开。真实项目间隔按代理/网关/业务调整。
-
-### 测试如何读取 SSE
-
-测试启动应用到随机端口(`bind("{host}:0}")` 让系统分配端口,避免固定端口冲突),用 reqwest 请求 `/sse`:
-
-````rust
-let mut event_stream = reqwest::Client::new()
-    .get(format!("{listening_url}/sse"))
-    .send().await.unwrap()
-    .bytes_stream()
-    .eventsource()    // 把字节流解析成 SSE event
-    .take(1);         // 只取一个事件,避免测试一直等无限流
-````
-
-`eventsource()` 把字节流解析成 SSE event,`.take(1)` 只取一个。最后断言 `event_data[0] == "hi!"`。
+浏览器原生支持，不需要任何库。
 
 ## 常见问题
 
-**curl 为什么加 `-N`?** `-N` 不缓冲输出。SSE 是持续流,缓冲的话终端可能不立刻显示事件。
+**SSE 和 WebSocket 哪个简单？** SSE 简单得多——纯 HTTP、不需要握手升级、浏览器自带重连。单向推送场景必选 SSE。
 
-**SSE 能从浏览器发消息到服务端吗?** 不能,SSE 是服务端到客户端单向推送。客户端发消息用普通 HTTP 请求或改 WebSocket。
+**`Infallible` 错误类型是什么意思？** "永不失败"——这章 stream 不会产错误。如果业务 stream 可能失败（如数据库连接断），用真实错误类型。
 
-**为什么需要 keep-alive?** 长连接长时间没数据可能被浏览器/代理/负载均衡断开,keep-alive 维持连接活跃。
-
-**stream 会结束吗?** `repeat_with` 创建无限 stream。真实项目按业务事件/channel 关闭/用户断开来结束。
-
-**SSE 适合什么场景?** 通知、任务进度、日志流、状态更新、只需服务端推送的实时数据。不适合强双向通信。
+**为什么用 `tokio_stream::StreamExt as _`？** 防 trait 名冲突——`futures_util::StreamExt` 和 `tokio_stream::StreamExt` 都叫 `StreamExt`，`as _` 导入但不绑名字（只为了它的方法在作用域内）。
 
 ## 手写任务
 
-按下面顺序敲:
-
-1. 写 `/sse` handler 返回 `Sse`。
-2. `stream::repeat_with` 创建事件。
-3. `.map(Ok)` 变成 `Result<Event, Infallible>`。
-4. `.throttle(Duration::from_secs(1))` 控制频率。
-5. 加 `keep_alive`。
-6. 写 `index.html` 和 `script.js` 用 `EventSource` 连接。
-7. 浏览器 Console 验证消息。
-
-加深练习:
-
-1. `hi!` 改成当前时间。
-2. 给 Event 设置 event name 和 id。
-3. 用 Tokio channel 代替 `repeat_with`,从后台任务推送消息。
+1. 改 stream 从 `tokio::sync::broadcast` 接收消息（参考 ch43）。
+2. 加事件类型：`.event("notification")`，前端 `addEventListener("notification", ...)`。
+3. 加断线重连：handler 读 `Last-Event-ID` header，从该 ID 之后开始推。
+4. 改成"流式 ChatGPT"——每秒产一个字符，最后发 `[DONE]`。
 
 ## 小结
 
-- SSE 核心模型:服务端返回不立刻结束的 HTTP 响应,响应体是事件流,浏览器用 EventSource 接收。
-- axum 关键结构:`Sse<impl Stream<Item = Result<Event, Infallible>>>`,把 Rust stream 变成浏览器能理解的 Server-Sent Events。
-- SSE 是单向(服务端 → 浏览器),适合推送通知/进度/日志/状态;双向实时通信用 WebSocket。
-- `stream::repeat_with` + `.map(Ok)` + `.throttle` 产生节流事件流;`keep_alive` 发心跳防止长连接被代理断开。
-- 测试用 `eventsource-stream` 把 reqwest 字节流解析成 SSE event,`.take(1)` 避免等无限流。
+这章用 2 步讲了 SSE：
+
+1. **`Sse<Stream>` 响应**：handler 返回 `Sse::new(stream)`，stream 不断 yield `Event`，axum 自动编码成 SSE 格式。
+2. **`KeepAlive` 心跳**：防止代理超时断连，业务事件稀疏时必备。
+
+核心：SSE 是**单向推送**的简单方案——纯 HTTP、浏览器自带重连、代理友好。优先选 SSE 而非 WebSocket。
 
 ## 源码对照
 
 - `examples/sse/Cargo.toml`
 - `examples/sse/src/main.rs`
 - `examples/sse/assets/index.html`
-- `examples/sse/assets/script.js`

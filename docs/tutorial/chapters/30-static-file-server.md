@@ -2,11 +2,11 @@
 
 对应示例：`examples/static-file-server`
 
-前两章讲服务端渲染 HTML,这章讲后端直接托管静态文件。用 `tower_http::services::ServeDir` 和 `ServeFile` 提供静态文件服务,理解目录挂载、fallback、SPA 回退和单文件路由。
+前面章节 handler 都是动态生成响应。这章讲怎么用 `tower-http` 的 `ServeDir` / `ServeFile` 把本地文件目录暴露成 HTTP 接口——这是搭建静态站点（HTML/CSS/JS）、SPA 前端托管、文件下载服务的基础。
 
+示例一口气展示了**七种**静态文件服务写法。本章按由简到繁拆成 3 步：先用最基础的 `ServeDir`，再加 fallback（404 → `index.html`，SPA 路由模式），最后看几种进阶变体（`ServeFile`、`oneshot` 在 handler 内调用）。
 
-
-相比前面章节新引入：**`ServeDir`/`ServeFile` 是 Tower Service（不是 Handler）、`SetStatus`、SPA fallback**。
+相比前面章节新引入：**`tower-http` crate、`ServeDir`/`ServeFile` service、`nest_service` 挂载 service、`fallback_service`、`SetStatus`、`HandlerWithoutStateExt::into_service`**。
 
 ## Cargo.toml
 
@@ -20,25 +20,237 @@ publish = false
 [dependencies]
 axum = "0.8"
 tokio = { version = "1.0", features = ["full"] }
-tower = { version = "0.5.2", features = ["util"] }
-tower-http = { version = "0.6.1", features = ["fs", "set-status", "trace"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
 ````
+
+`tower-http` 启用 `fs`（`ServeDir`/`ServeFile`）和 `trace`（日志）feature。
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## 关键概念
+---
 
-> **新面孔：`ServeDir`/`ServeFile` 是 Service**
+## 第一步：最基础的 `ServeDir`——把目录挂到路径
+
+`ServeDir::new("assets")` 是一个 service，把 `assets/` 目录暴露成 HTTP。用 `nest_service` 挂到 `/assets` 路径前缀，访问 `/assets/foo.html` 就会找 `assets/foo.html`。
+
+````rust
+use axum::{routing::get, Router};
+use std::net::SocketAddr;
+use tower_http::{services::ServeDir, trace::TraceLayer};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                format!("{}=debug,tower_http=debug", env!("CARGO_CRATE_NAME")).into()
+            }),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    serve(using_serve_dir(), 3001).await;
+}
+
+fn using_serve_dir() -> Router {
+    // serve the file in the "assets" directory under `/assets`
+    Router::new().nest_service("/assets", ServeDir::new("assets"))
+}
+
+async fn serve(app: Router, port: u16) {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    tracing::debug!("listening on {}", listener.local_addr().unwrap());
+    axum::serve(listener, app.layer(TraceLayer::new_for_http())).await.unwrap();
+}
+````
+
+准备测试文件（参考 `examples/static-file-server/assets/` 目录）：
+
+````bash
+mkdir -p assets
+echo '<h1>Hello</h1>' > assets/index.html
+echo 'body { color: red; }' > assets/style.css
+````
+
+验证：
+
+````bash
+cd examples
+cargo run -p example-static-file-server
+````
+
+````bash
+curl http://127.0.0.1:3001/assets/index.html   # 返回 <h1>Hello</h1>
+curl http://127.0.0.1:3001/assets/style.css    # 返回 css
+curl -i http://127.0.0.1:3001/assets/nope.html # 404
+````
+
+> **新面孔：`tower-http` crate**
 >
-> 不是 Handler！它们实现 Tower `Service` trait，用 `nest_service`/`route_service` 挂载，不能用 `get(handler)`。
+> `tower` 生态的 HTTP middleware 和 service 库。axum 本身不内置静态文件服务——`tower-http::services::{ServeDir, ServeFile}` 提供这两个 service。还有 `TraceLayer`（日志）、`CompressionLayer`（压缩）、`CorsLayer`（CORS）等，后面章节陆续见到。
 
-> **新面孔：`SetStatus` + SPA fallback**
+> **新面孔：`ServeDir`**
 >
-> `SetStatus::new(ServeFile, StatusCode::NOT_FOUND)` 返回 index.html 但状态码 404——路径不存在，前端路由接管。
+> 一个 `tower::Service`：把某个目录暴露成 HTTP。`ServeDir::new("assets")` 服务 `assets/` 目录，访问 `/assets/x.html` 自动找 `assets/x.html` 文件返回。文件不存在返回 404。
 
+> **新面孔：`nest_service` vs `route`**
+>
+> `Router::route("/path", handler)` 把 handler 挂到精确路径。`nest_service("/prefix", service)` 把一个 service 挂到路径前缀——后续路径任意。`ServeDir` 是 service 不是 handler，必须用 `nest_service`（或 `fallback_service`）挂载。
+
+---
+
+## 第二步：SPA fallback——404 返回 `index.html`
+
+单页应用（SPA）的客户端路由（如 React Router）要求所有未匹配路径都返回 `index.html`，让前端路由接管。这步用 `not_found_service` + `fallback_service` 实现这个模式。
+
+````rust
+use axum::http::StatusCode;
+use tower_http::{
+    services::{ServeDir, ServeFile},
+    set_status::SetStatus,
+};
+
+fn using_serve_dir_with_assets_fallback() -> Router {
+    // 关键：用 404 状态码返回 index.html
+    let index_html = SetStatus::new(ServeFile::new("assets/index.html"), StatusCode::NOT_FOUND);
+    let serve_dir = ServeDir::new("assets").not_found_service(index_html.clone());
+
+    Router::new()
+        .route("/foo", get(|| async { "Hi from /foo" }))
+        .nest_service("/assets", serve_dir)
+        .fallback_service(index_html)
+}
+````
+
+> **新面孔：`SetStatus`**
+>
+> 包装一个 service，强制覆盖响应状态码。这里 `ServeFile::new("assets/index.html")` 默认返回 200，包装成 `SetStatus::new(..., StatusCode::NOT_FOUND)` 后返回 404——表示"文件没找到，但前端可以拿 index.html 接管路由"。
+>
+> 为什么不直接 200？SEO/客户端逻辑可能依赖状态码。404 + 内容 让客户端能区分"路径不存在但 SPA 可处理" vs "真正命中"。
+
+> **新面孔：`ServeFile`**
+>
+> 单文件版的 `ServeDir`，只服务一个文件（不是目录）。常配合 `SetStatus` 做自定义 404 页面。
+
+> **新面孔：`not_found_service` + `fallback_service`**
+>
+> 两个相关但不同的 API：
+> - `ServeDir::new(...).not_found_service(svc)`：`ServeDir` 找不到文件时交给 `svc` 处理（**仅影响 `/assets/` 下的查找**）
+> - `Router::fallback_service(svc)`：所有路径都没匹配时交给 `svc`（**影响整个 app**）
+>
+> SPA 模式同时用两个：`/assets/doesnt-exist` 走 `not_found_service`（返回 404 index.html），`/random/path` 走 `fallback_service`（同样返回 404 index.html）。
+
+### 只用 fallback（不 nest）的变体
+
+````rust
+fn using_serve_dir_only_from_root_via_fallback() -> Router {
+    // 不挂 /assets 前缀，直接从根路径服务
+    let serve_dir = ServeDir::new("assets").not_found_service(ServeFile::new("assets/index.html"));
+
+    Router::new()
+        .route("/foo", get(|| async { "Hi from /foo" }))
+        .fallback_service(serve_dir)
+}
+````
+
+这版把 `ServeDir` 作为全局 fallback：访问 `/foo` 走正常 handler，访问 `/index.html` 或 `/style.css` 走 fallback 找文件。
+
+### handler 作为 fallback service
+
+````rust
+use axum::handler::HandlerWithoutStateExt;
+
+fn using_serve_dir_with_handler_as_service() -> Router {
+    async fn handle_404() -> (StatusCode, &'static str) {
+        (StatusCode::NOT_FOUND, "Not found")
+    }
+
+    // handler 函数转成 service
+    let service = handle_404.into_service();
+
+    let serve_dir = ServeDir::new("assets").not_found_service(service);
+
+    Router::new()
+        .route("/foo", get(|| async { "Hi from /foo" }))
+        .fallback_service(serve_dir)
+}
+````
+
+> **新面孔：`HandlerWithoutStateExt::into_service`**
+>
+> `not_found_service` 接受的是 `Service`，不是 handler。`handle_404.into_service()` 把 handler 函数转成 service——这样能传给 `ServeDir::not_found_service` 或 `fallback_service`。
+>
+> `into_service` vs `into_make_service`（第 50 章见过）：`into_service` 转**单个** service 适合做 fallback；`into_make_service` 转**service 工厂**适合 `axum::serve`。
+
+---
+
+## 第三步：进阶变体——多个 ServeDir、handler 内调用、ServeFile
+
+最后几种写法展示了 `ServeDir`/`ServeFile` 的灵活性。
+
+### 两个 `ServeDir` 挂不同路径
+
+````rust
+fn two_serve_dirs() -> Router {
+    let serve_dir_from_assets = ServeDir::new("assets");
+    let serve_dir_from_dist = ServeDir::new("dist");
+
+    Router::new()
+        .nest_service("/assets", serve_dir_from_assets)
+        .nest_service("/dist", serve_dir_from_dist)
+}
+````
+
+`/assets/*` 查 `assets/` 目录，`/dist/*` 查 `dist/` 目录。可用于同时托管多套前端构建产物。
+
+### 在 handler 内手动调 `ServeDir`（`oneshot`）
+
+````rust
+use axum::extract::Request;
+use tower::ServiceExt;
+
+#[allow(clippy::let_and_return)]
+fn calling_serve_dir_from_a_handler() -> Router {
+    Router::new().nest_service(
+        "/foo",
+        get(|request: Request| async {
+            let service = ServeDir::new("assets");
+            // 用 oneshot 手动调一次 service
+            let result = service.oneshot(request).await;
+            result
+        }),
+    )
+}
+````
+
+> **新面孔：`ServiceExt::oneshot`**
+>
+> `tower::ServiceExt` 提供的便捷方法：**只调用一次** service 并取结果。正常 service 要先 `.ready().await`（等就绪）再 `.call(req)`，`oneshot` 把这两步合起来。
+>
+> 用途：handler 内动态决定要不要走 `ServeDir`，比如根据用户权限决定要不要返回静态文件。
+
+### `ServeFile` 作为单文件 route
+
+````rust
+use tower_http::services::ServeFile;
+
+fn using_serve_file_from_a_route() -> Router {
+    Router::new().route_service("/foo", ServeFile::new("assets/index.html"))
+}
+````
+
+> **新面孔：`route_service`**
+>
+> `Router::route` 挂 handler，`Router::route_service` 挂 service。`ServeFile` 是 service 不是 handler，所以用 `route_service`。
+>
+> 用途：固定路径返回固定文件（如 `/favicon.ico` → favicon 文件）。
+
+---
 
 ## 完整代码
 
@@ -78,6 +290,7 @@ async fn main() {
 }
 
 fn using_serve_dir() -> Router {
+    // serve the file in the "assets" directory under `/assets`
     Router::new().nest_service("/assets", ServeDir::new("assets"))
 }
 
@@ -138,12 +351,14 @@ fn using_serve_file_from_a_route() -> Router {
     Router::new().route_service("/foo", ServeFile::new("assets/index.html"))
 }
 
+#[cfg(test)]
+mod tests;
 
 async fn serve(app: Router, port: u16) {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app.layer(TraceLayer::new_for_http())).await;
+    axum::serve(listener, app.layer(TraceLayer::new_for_http())).await.unwrap();
 }
 ````
 
@@ -154,165 +369,68 @@ cd examples
 cargo run -p example-static-file-server
 ````
 
-不同端口演示不同写法:
+七个端口同时跑（3001-3006 + 3307）。准备 `assets/index.html` 测试：
 
 ````bash
-# 3001 最基础的 /assets 挂载
-curl http://127.0.0.1:3001/assets/index.html
-
-# 3002 SPA fallback:找不到文件返回 index.html 但状态码 404
-curl -i http://127.0.0.1:3002/script.js
-
-# 3003 从根路径 fallback 到静态目录
-curl http://127.0.0.1:3003/script.js
-
-# 3307 单路由返回单文件
-curl http://127.0.0.1:3307/foo
+curl http://127.0.0.1:3001/assets/index.html            # ServeDir 基础
+curl -i http://127.0.0.1:3002/assets/doesnt-exist       # 404 + index.html 内容（SPA 模式）
+curl -i http://127.0.0.1:3002/random/path               # 404 + index.html（fallback）
+curl http://127.0.0.1:3003/style.css                    # 不带 /assets 前缀直接访问
+curl -i http://127.0.0.1:3004/assets/nope               # 404 "Not found"
+curl http://127.0.0.1:3307/foo                          # ServeFile 单文件
 ````
-
-注意:`ServeDir::new("assets")` 用进程当前工作目录下的 `assets`。运行时一直 404,先确认程序工作目录里有 `assets/index.html`。
 
 ## 解读
 
-### Service 是本章核心概念(先读 A0 附录)
+### Service vs Handler
 
-本章反复出现 `ServeDir`、`ServeFile`、`nest_service`、`fallback_service`、`route_service`、`oneshot`——背后都是同一个抽象:**Service**。如果你还没读**附录 A0《Tower 基础:Service 与 Layer》**,强烈建议先花 10 分钟读。这里说最关键三点:
+这章反复出现 service 和 handler 的转换，理清概念：
 
-1. **Service 是"接收请求、返回响应"的对象**。你的 handler 本质上也是 service,只是多了 extractor 能力。
-2. **`ServeDir`/`ServeFile` 天生就是 service,不是 handler**——它们内部处理路径匹配/读文件/返回响应,不依赖 extractor,所以直接实现成 `Service`。
-3. **挂 service 和挂 handler 用不同 API**:
-
-| API | 接收什么 | 例子 |
+| 概念 | 接口 | axum 挂载方式 |
 | --- | --- | --- |
-| `.route("/foo", get(handler))` | handler(有 extractor) | 业务接口 |
-| `.route_service("/foo", service)` | service,匹配精确路径 | `ServeFile::new("...")` |
-| `.nest_service("/assets", service)` | service,匹配前缀下所有路径 | `ServeDir::new("assets")` |
+| **Handler** | async fn 返回 `IntoResponse` | `.route("/path", get(handler))` |
+| **Service** | `tower::Service<Request>` | `.nest_service(...)` / `.route_service(...)` / `.fallback_service(...)` |
 
-为什么 `ServeDir` 不能塞进 `get(handler)`?handler 要满足 `Handler` trait,`ServeDir` 实现的是 `Service` trait,两者是不同抽象。
+`ServeDir`/`ServeFile` 是 service 不是 handler。要把 handler 当 service 用，调 `.into_service()`。
 
-`route_service` vs `nest_service` 的区别在前缀:`route_service("/foo", svc)` 只匹配精确 `/foo`;`nest_service("/assets", svc)` 匹配 `/assets` 下所有路径,剩余部分(如 `/assets/script.js` 的 `/script.js`)传给 svc。
+### SPA 路由模式
 
-### ServeDir vs ServeFile
+单页应用（React/Vue）的客户端路由要求：所有未匹配路径都返回 `index.html`，让前端 JS 接管路由。模式：
 
 ```text
-ServeDir  -> 托管一个目录(按请求路径在目录里找文件)
-ServeFile -> 托管一个文件(不管请求细节,固定返回这个文件)
+请求 /foo（不存在）
+  → fallback_service 命中
+  → 返回 index.html（状态码 404，表示"路径没找到但 SPA 可处理"）
+  → 浏览器加载 SPA，前端路由渲染 /foo 对应的组件
 ```
-
-都用 `nest_service` / `route_service` 挂载,不能用 `get(handler)`。
-
-### 8 种写法对照
-
-**1. 最基础 ServeDir**(3001):
-
-````rust
-fn using_serve_dir() -> Router {
-    Router::new().nest_service("/assets", ServeDir::new("assets"))
-}
-````
-
-URL 前缀 `/assets` 对应磁盘目录 `assets`。`/assets/index.html` 读 `assets/index.html`。
-
-**2. SPA fallback**(3002):两层 fallback + 状态码 404:
-
-````rust
-let index_html = SetStatus::new(ServeFile::new("assets/index.html"), StatusCode::NOT_FOUND);
-let serve_dir = ServeDir::new("assets").not_found_service(index_html.clone());
-
-Router::new()
-    .route("/foo", get(|| async { "Hi from /foo" }))
-    .nest_service("/assets", serve_dir)
-    .fallback_service(index_html)
-````
-
-- `/assets/...` 找不到文件 → 返回 `index.html`。
-- 其他未知路径 → 也返回 `index.html`。
-- `SetStatus` 把状态码设 404:内容返回 index.html(让前端路由接管),状态码告诉客户端路径确实不存在。
-
-**3. 从根路径 fallback**(3003):不挂 `/assets` 前缀,把 `ServeDir` 放整个 Router fallback:
-
-````rust
-Router::new()
-    .route("/foo", get(|| async { "Hi from /foo" }))
-    .fallback_service(serve_dir)
-````
-
-`GET /script.js` 尝试读 `assets/script.js`,`GET /xxx` 找不到时返回 `index.html`。适合"少量 API 路由 + 其余路径交给前端构建产物"。
-
-**4. handler 转 service 做 404**(3004):
-
-````rust
-let service = handle_404.into_service();  // handler 转 service
-let serve_dir = ServeDir::new("assets").not_found_service(service);
-````
-
-`not_found_service` 需要 service,普通 handler 用 `.into_service()` 转换。展示了 handler 和 Tower service 可互相配合。
-
-**5. 两个静态目录**(3005):`/assets` 和 `/dist` 分别挂不同目录。
-
-**6. handler 里手动调 ServeDir**(3006):
-
-````rust
-.get(|request: Request| async {
-    let service = ServeDir::new("assets");
-    let result = service.oneshot(request).await;
-    result
-})
-````
-
-`oneshot` 来自 `tower::ServiceExt`,用 service 处理一次请求。大多数项目不需要,但帮你理解 `ServeDir` 本质也是接收 Request 返回 Response 的 service。
-
-**7. 单路由返回单文件**(3307):
-
-````rust
-Router::new().route_service("/foo", ServeFile::new("assets/index.html"))
-````
-
-适合 `/favicon.ico`、`/robots.txt`、`/download/manual.pdf` 这种固定文件。
-
-### 静态文件路径 vs URL 路径
-
-URL 前缀是 Router 定义的,磁盘目录是 `ServeDir::new(...)` 定义的。`nest_service("/assets", ServeDir::new("assets"))` 让 URL `/assets/script.js` 对应磁盘 `assets/script.js`——两者不必相同。
 
 ## 常见问题
 
-**nest_service vs fallback_service?** `nest_service("/assets", ...)` 只处理 `/assets/...` 前缀;`fallback_service(...)` 处理没被其他路由匹配到的请求。
+**`nest_service` vs `fallback_service`？** `nest_service` 挂到指定前缀，`fallback_service` 兜底所有未匹配路径。SPA 模式常用 `fallback_service(ServeDir)` 让静态文件接管全部未匹配路径。
 
-**ServeDir 找不到文件返回什么?** 默认找不到,可用 `.not_found_service(...)` 指定交给另一个 service。
+**为什么要 `SetStatus` 改成 404？** 200 会让浏览器/CDN 误以为路径真的存在，404 表示"路径不存在但给你 SPA 入口让前端处理"。
 
-**SPA fallback 为什么返回 index.html 但状态码 404?** 请求路径确实不是存在的静态文件,返回 index.html 让前端路由接管页面,状态码 404 保留后端语义。
-
-**生产环境一定用 axum 托管静态文件吗?** 不一定,很多用 Nginx/CDN/对象存储。axum 适合小型服务、管理后台、内网工具、和 Rust 服务打包的简单页面。
+**怎么防止目录穿越（`/assets/../etc/passwd`）？** `ServeDir` 内置防穿越，自动拒绝 `..` 路径。
 
 ## 手写任务
 
-按下面顺序敲:
-
-1. 准备 `assets/index.html` 和 `assets/script.js`。
-2. 写 `using_serve_dir()`,把 `assets` 挂到 `/assets`。
-3. curl 访问 `/assets/index.html`。
-4. 写 `ServeFile::new("assets/index.html")`。
-5. 用 `fallback_service` 做 SPA fallback。
-6. `route_service("/foo", ServeFile::new(...))` 返回单文件。
-7. `route_service("/foo", ServeFile::new(...))` 返回单文件。
-
-加深练习:
-
-1. 新增 `/favicon.ico` 用 `ServeFile` 返回固定文件。
-2. 新增 `/public` 挂载另一个静态目录。
-3. 给静态文件服务加 `TraceLayer` 观察请求日志。
+1. 加 `tower-http` 的 `CompressionLayer`，对比压缩前后 response size。
+2. 写个自定义 fallback service，返回 JSON 错误而不是 HTML。
+3. 改成 `ServeDir::new("assets").append_index_html_on_directories(true)`（默认行为），访问 `/assets/` 自动返回 `index.html`。
+4. 在 handler 内 `oneshot` ServeDir 时加权限检查（用户未登录返回 403）。
 
 ## 小结
 
-- 静态文件服务的核心不是 handler 而是 Tower service:`ServeDir` 托管目录,`ServeFile` 托管单文件。
-- 是 service 不是 handler 的原因:它们自己实现"接收请求返回响应"能力,不需 extractor 从请求里提参数,用 `nest_service`/`route_service` 挂载,不能用 `get(handler)`。
-- `route_service` 匹配精确路径,`nest_service` 匹配前缀下所有路径,`fallback_service` 处理未匹配请求。
-- SPA fallback 用 `SetStatus::new(ServeFile, StatusCode::NOT_FOUND)`:返回 index.html 让前端路由接管,状态码保留 404 语义。
-- handler 和 service 可互转(`handle.into_service()`),axum 和 Tower 能互相配合。不理解 Service 抽象回附录 A0 查。
+这章用 3 步讲了 axum 静态文件服务：
+
+1. **基础 ServeDir**：`nest_service("/assets", ServeDir::new("assets"))` 把目录挂到路径前缀。
+2. **SPA fallback**：`not_found_service` + `fallback_service` 让 404 返回 `index.html`，支持前端路由；`SetStatus` 控制状态码。
+3. **进阶变体**：多 `ServeDir`、`oneshot` 在 handler 内调用、`ServeFile` 单文件、`into_service` 把 handler 转 service。
+
+核心概念：**Service vs Handler**——`ServeDir`/`ServeFile` 是 service，挂载用 `nest_service`/`route_service`/`fallback_service`，转换用 `into_service` / `oneshot`。
 
 ## 源码对照
 
 - `examples/static-file-server/Cargo.toml`
 - `examples/static-file-server/src/main.rs`
-- `examples/static-file-server/assets/index.html`
-- `examples/static-file-server/assets/script.js`
+- `examples/static-file-server/tests/tests.rs`

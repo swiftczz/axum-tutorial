@@ -2,11 +2,13 @@
 
 对应示例：`examples/mongodb`
 
-前几章连 PostgreSQL 和 Redis,这章连 MongoDB。用 MongoDB 官方 Rust driver 实现最小 CRUD 接口,理解 database/collection/document、`_id` 映射、`State<Collection<T>>`。MongoDB 是文档型数据库,适合灵活 schema 的文档数据。
+前面几章数据库都是 PostgreSQL/Redis。这章换 **MongoDB**——文档型 NoSQL 数据库，存 JSON-like 文档（BSON）。和 SQL 数据库最大区别：无表结构约束、查询用 `doc! { ... }` 而非 SQL、Rust 端 model 直接 serde 到文档。
 
+实现一个 members 的 CRUD（Create/Read/Update/Delete），掌握 MongoDB 的 `Client`/`Collection`、`doc!` 查询、`Collection<Member>` 作为 State 的模式。
 
+分 3 步：先建连接和 model，再加 create/read，最后加 update/delete。
 
-相比前面章节新引入：**MongoDB `Client` 自带连接池、`Collection<T>`、`doc!` 宏、`#[serde(rename = "_id")]`**。
+相比前面章节新引入：**`mongodb` crate、`Client::with_uri_str`、`Collection<T>` 泛型集合、`doc!` 宏（BSON 文档）、`insert_one`/`find_one`/`replace_one`/`delete_one`**。
 
 ## Cargo.toml
 
@@ -19,49 +21,48 @@ publish = false
 
 [dependencies]
 axum = "0.8"
-mongodb = { version = "3.3.0", default-features = false, features = ["bson-3", "compat-3-3-0", "rustls-tls"] }
+mongodb = "3"
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.0", features = ["full"] }
-tower-http = { version = "0.6.1", features = ["add-extension", "trace"] }
+tower-http = { version = "0.6", features = ["trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## 关键概念
+---
 
-> **新面孔：MongoDB `Client` 自带连接池**
->
-> 不需要 bb8。`Collection<Member>` 告诉 driver 文档和 Rust 结构体互转。`doc!{"_id": id}` 构造 BSON 查询条件。
+## 第一步：连接 MongoDB + 定义 Member model + 路由骨架
 
-
-## 完整代码
+先建连接：用 `Client::with_uri_str` 连 MongoDB，ping 验证。再定义 `Member` model（serde 到 BSON 文档），最后把 `Collection<Member>` 作为 State 注入 Router。
 
 ````rust
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    routing::{delete, get, post, put},
-    Json, Router,
+    routing::{get, post},
+    Router,
 };
-use mongodb::{
-    bson::doc,
-    results::{DeleteResult, InsertOneResult, UpdateResult},
-    Client, Collection,
-};
+use mongodb::{bson::doc, Client, Collection};
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Member {
+    #[serde(rename = "_id")]
+    id: u32,
+    name: String,
+    active: bool,
+}
 
 #[tokio::main]
 async fn main() {
     let db_connection_str = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
         "mongodb://admin:password@127.0.0.1:27017/?authSource=admin".to_string()
     });
-
     let client = Client::with_uri_str(db_connection_str).await.unwrap();
 
+    // ping 验证连接
     client
         .database("axum-mongo")
         .run_command(doc! { "ping": 1 })
@@ -89,13 +90,62 @@ fn app(client: Client) -> Router {
     let collection: Collection<Member> = client.database("axum-mongo").collection("members");
 
     Router::new()
-        .route("/create", post(create_member))
-        .route("/read/{id}", get(read_member))
-        .route("/update", put(update_member))
-        .route("/delete/{id}", delete(delete_member))
         .layer(TraceLayer::new_for_http())
         .with_state(collection)
 }
+````
+
+验证（需要本地 MongoDB）：
+
+````bash
+# 用 docker 启 mongo
+docker run -d --name mongo -p 27017:27017 \
+  -e MONGO_INITDB_ROOT_USERNAME=admin \
+  -e MONGO_INITDB_ROOT_PASSWORD=password \
+  mongo:7
+
+cd examples
+cargo run -p example-mongodb
+````
+
+看到 `Pinged your database. Successfully connected to MongoDB!` 就说明连上了。这步还没 handler，下一步加。
+
+> **新面孔：`mongodb::Client`**
+>
+> MongoDB 客户端，`Client::with_uri_str(uri).await` 建立连接池。`uri` 格式 `mongodb://user:pass@host:port/?authSource=db`。
+>
+> Client 内部维护连接池，可 clone 共享——所以 `fn app(client: Client)` 直接 move 进 Router 没问题。
+
+> **新面孔：`doc!` 宏**
+>
+> `bson::doc! { ... }` 构造 BSON 文档（MongoDB 的查询格式）。`doc! { "ping": 1 }` 等价于 MongoDB shell 的 `{ ping: 1 }`。
+>
+> 后面查询都用 `doc!`：`doc! { "_id": id }` 表示"找 `_id` 等于 `id` 的文档"。
+
+> **新面孔：`Collection<T>`**
+>
+> MongoDB 集合（类似 SQL 的表），`<T>` 参数告诉 driver 怎么序列化/反序列化文档。这里 `Collection<Member>` 让 driver 自动把 `Member` 转 BSON 存进去、把查到的文档转回 `Member`。
+>
+> `client.database("axum-mongo").collection("members")` 选 `axum-mongo` 数据库的 `members` 集合。集合不存在第一次写入时自动创建。
+
+> **新面孔：`#[serde(rename = "_id")]`**
+>
+> MongoDB 用 `_id` 作为主键（注意下划线前缀）。Rust 字段命名规范不允许下划线开头，所以用 `serde(rename = "_id")` 把 `id` 字段映射到 BSON 的 `_id`。
+
+---
+
+## 第二步：`create_member` + `read_member`
+
+加两个 handler：POST 创建一个 member，GET 按 id 查 member。
+
+````rust
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    routing::{get, post},
+    Json,
+};
+use mongodb::results::{InsertOneResult};
 
 async fn create_member(
     State(db): State<Collection<Member>>,
@@ -115,6 +165,57 @@ async fn read_member(
         .map_err(internal_error)?;
     Ok(Json(result))
 }
+
+fn internal_error<E>(err: E) -> (StatusCode, String)
+where
+    E: std::error::Error,
+{
+    (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+}
+
+# fn app(client: Client) -> Router {
+#     let collection: Collection<Member> = client.database("axum-mongo").collection("members");
+#     Router::new()
+#         .route("/create", post(create_member))
+#         .route("/read/{id}", get(read_member))
+#         .layer(TraceLayer::new_for_http())
+#         .with_state(collection)
+# }
+````
+
+> **新面孔：`insert_one` / `find_one`**
+>
+> MongoDB 的基础操作。`Collection<Member>` 提供 typed 方法：
+> - `db.insert_one(member).await` → `InsertOneResult`（含生成的 `_id`）
+> - `db.find_one(doc! { "_id": id }).await` → `Option<Member>`（找不到是 None）
+>
+> 因为 `Collection<Member>` 是泛型的，driver 自动处理 `Member ↔ BSON` 转换——不用手动 `to_bson` / `from_bson`。错误处理只有一层 `map_err`（不像 Diesel 那样两层），因为 mongodb crate 原生 async。
+
+> **新面孔：`Path<u32>` extractor**
+>
+> 第 16 章 todos 用过 `Path`。`Path(id): Path<u32>` 从 URL 路径参数提取。路由 `/read/{id}` 里的 `{id}` 被解析成 `u32`（要能 parse 成 u32，否则 400）。
+
+验证：
+
+````bash
+curl -X POST http://127.0.0.1:3000/create \
+  -H 'content-type: application/json' \
+  -d '{"id":1,"name":"Alice","active":true}'
+# 返回 {"inserted_id":1,...}
+
+curl http://127.0.0.1:3000/read/1
+# 返回 {"_id":1,"name":"Alice","active":true}
+````
+
+---
+
+## 第三步：`update_member` + `delete_member`
+
+加 PUT（整体替换）和 DELETE 两个 handler，完成 CRUD。
+
+````rust
+use mongodb::results::{DeleteResult, UpdateResult};
+use axum::routing::{delete, put};
 
 async fn update_member(
     State(db): State<Collection<Member>>,
@@ -138,6 +239,158 @@ async fn delete_member(
     Ok(Json(result))
 }
 
+# fn app(client: Client) -> Router {
+#     let collection: Collection<Member> = client.database("axum-mongo").collection("members");
+#     Router::new()
+#         .route("/create", post(create_member))
+#         .route("/read/{id}", get(read_member))
+#         .route("/update", put(update_member))
+#         .route("/delete/{id}", delete(delete_member))
+#         .layer(TraceLayer::new_for_http())
+#         .with_state(collection)
+# }
+````
+
+> **新面孔：`replace_one` vs `update_one`**
+>
+> 两个更新方法：
+> - `replace_one(filter, new_doc)`：**整体替换**文档（除 `_id` 外全替换），这章用这个
+> - `update_one(filter, doc! { "$set": { ... } })`：**部分更新**用 `$set` / `$inc` 等操作符
+>
+> 这里 `update_member` 接收完整 `Member` 做 `replace_one`，简单粗暴。如果想"只改 active 字段"用 `update_one(doc!{"_id":id}, doc!{"$set": {"active": false}})`。
+
+> **新面孔：`delete_one`**
+>
+> `db.delete_one(doc! { "_id": id })` 删除匹配的第一个文档。返回 `DeleteResult`（含 `deleted_count`，0 或 1）。
+
+验证：
+
+````bash
+curl -X PUT http://127.0.0.1:3000/update \
+  -H 'content-type: application/json' \
+  -d '{"id":1,"name":"Alice Smith","active":false}'
+# 返回 {"matched_count":1,"modified_count":1,...}
+
+curl -X DELETE http://127.0.0.1:3000/delete/1
+# 返回 {"deleted_count":1,...}
+````
+
+---
+
+## 完整代码
+
+````rust
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    routing::{delete, get, post, put},
+    Json, Router,
+};
+use mongodb::{
+    bson::doc,
+    results::{DeleteResult, InsertOneResult, UpdateResult},
+    Client, Collection,
+};
+use serde::{Deserialize, Serialize};
+use tower_http::trace::TraceLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[tokio::main]
+async fn main() {
+    // connecting to mongodb
+    let db_connection_str = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "mongodb://admin:password@127.0.0.1:27017/?authSource=admin".to_string()
+    });
+    let client = Client::with_uri_str(db_connection_str).await.unwrap();
+
+    // pinging the database
+    client
+        .database("axum-mongo")
+        .run_command(doc! { "ping": 1 })
+        .await
+        .unwrap();
+    println!("Pinged your database. Successfully connected to MongoDB!");
+
+    // logging middleware
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                format!("{}=debug,tower_http=debug", env!("CARGO_CRATE_NAME")).into()
+            }),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    // run it
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+        .await
+        .unwrap();
+    tracing::debug!("Listening on {}", listener.local_addr().unwrap());
+    axum::serve(listener, app(client)).await.unwrap();
+}
+
+// defining routes and state
+fn app(client: Client) -> Router {
+    let collection: Collection<Member> = client.database("axum-mongo").collection("members");
+
+    Router::new()
+        .route("/create", post(create_member))
+        .route("/read/{id}", get(read_member))
+        .route("/update", put(update_member))
+        .route("/delete/{id}", delete(delete_member))
+        .layer(TraceLayer::new_for_http())
+        .with_state(collection)
+}
+
+// handler to create a new member
+async fn create_member(
+    State(db): State<Collection<Member>>,
+    Json(input): Json<Member>,
+) -> Result<Json<InsertOneResult>, (StatusCode, String)> {
+    let result = db.insert_one(input).await.map_err(internal_error)?;
+
+    Ok(Json(result))
+}
+
+// handler to read an existing member
+async fn read_member(
+    State(db): State<Collection<Member>>,
+    Path(id): Path<u32>,
+) -> Result<Json<Option<Member>>, (StatusCode, String)> {
+    let result = db
+        .find_one(doc! { "_id": id })
+        .await
+        .map_err(internal_error)?;
+
+    Ok(Json(result))
+}
+
+// handler to update an existing member
+async fn update_member(
+    State(db): State<Collection<Member>>,
+    Json(input): Json<Member>,
+) -> Result<Json<UpdateResult>, (StatusCode, String)> {
+    let result = db
+        .replace_one(doc! { "_id": input.id }, input)
+        .await
+        .map_err(internal_error)?;
+
+    Ok(Json(result))
+}
+
+// handler to delete an existing member
+async fn delete_member(
+    State(db): State<Collection<Member>>,
+    Path(id): Path<u32>,
+) -> Result<Json<DeleteResult>, (StatusCode, String)> {
+    let result = db
+        .delete_one(doc! { "_id": id })
+        .await
+        .map_err(internal_error)?;
+
+    Ok(Json(result))
+}
+
 fn internal_error<E>(err: E) -> (StatusCode, String)
 where
     E: std::error::Error,
@@ -145,6 +398,7 @@ where
     (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
 }
 
+// defining Member type
 #[derive(Debug, Deserialize, Serialize)]
 struct Member {
     #[serde(rename = "_id")]
@@ -156,28 +410,32 @@ struct Member {
 
 ## 运行
 
-先启动 MongoDB,默认地址 `mongodb://admin:password@127.0.0.1:27017/?authSource=admin`(也可用 `DATABASE_URL` 覆盖):
-
 ````bash
+# 启动 MongoDB（docker）
+docker run -d --name mongo -p 27017:27017 \
+  -e MONGO_INITDB_ROOT_USERNAME=admin \
+  -e MONGO_INITDB_ROOT_PASSWORD=password \
+  mongo:7
+
 cd examples
 cargo run -p example-mongodb
 ````
 
-CRUD:
+CRUD 测试：
 
 ````bash
 # 创建
 curl -X POST http://127.0.0.1:3000/create \
   -H 'content-type: application/json' \
-  -d '{"_id":1,"name":"Alice","active":true}'
+  -d '{"id":1,"name":"Alice","active":true}'
 
-# 读取
+# 查询
 curl http://127.0.0.1:3000/read/1
 
-# 更新(替换整个 document)
+# 更新（整体替换）
 curl -X PUT http://127.0.0.1:3000/update \
   -H 'content-type: application/json' \
-  -d '{"_id":1,"name":"Alice Updated","active":false}'
+  -d '{"id":1,"name":"Alice Smith","active":false}'
 
 # 删除
 curl -X DELETE http://127.0.0.1:3000/delete/1
@@ -185,104 +443,43 @@ curl -X DELETE http://127.0.0.1:3000/delete/1
 
 ## 解读
 
-### MongoDB 三个层级
+### MongoDB vs SQL 数据库
 
-粗略类比 PostgreSQL:
+| 维度 | MongoDB | SQL（Postgres） |
+| --- | --- | --- |
+| 数据模型 | 文档（BSON/JSON-like） | 行（结构化） |
+| Schema | 无约束（灵活） | 严格（migration 定义） |
+| 查询 | `doc! { "_id": id }` | `SELECT * FROM ... WHERE id = $1` |
+| Rust 集成 | serde 自动转 BSON/反序列化 | Diesel/sqlx 类型映射 |
+| 主键 | `_id`（自动生成 ObjectId 或自定义） | `id`（SERIAL 等） |
 
-```text
-PostgreSQL database → MongoDB database
-PostgreSQL table    → MongoDB collection
-PostgreSQL row      → MongoDB document
-```
+### `Collection<Member>` 作为 State
 
-本章用 database `axum-mongo`、collection `members`、document `Member`。document 本质是 BSON,Rust 里通过 serde 和结构体互相转换。
-
-### `Client` 自带连接池(本章关键差异)
-
-MongoDB driver 的 `Client` 内部基于 tokio 实现了**自带连接池**——`Client` 持有可配置的连接池(默认 `max_pool_size` = 100,可通过 `ClientOptions::max_pool_size(...)` 调整),所有操作自动从内部池借连接。**不需要**像 Redis/PostgreSQL 那样自己套 bb8。
-
-和前面几章对比:
-
-| 方案 | 连接池在哪 |
-| --- | --- |
-| SQLx(32) | driver 自带 `PgPool` |
-| tokio-postgres + bb8(33) | driver 不带,**你用 bb8 自己建** |
-| Diesel + deadpool(34) | driver 不带,**你用 deadpool 自己建** |
-| Redis + bb8(36) | driver 不带,**你用 bb8 自己建**(或 `MultiplexedConnection`) |
-| MongoDB(37) | driver 自带,`Client` 就是池 |
-
-`Client` 可廉价 clone(内部是 `Arc`),放进 axum state 用 `State<Client>` 提取。本章共享单位是 `Collection<Member>`(从 Client 选出来),`Client` 在 main 持有。
-
-### `_id` 映射(最容易踩坑)
-
-````rust
-#[derive(Debug, Deserialize, Serialize)]
-struct Member {
-    #[serde(rename = "_id")]
-    id: u32,
-    name: String,
-    active: bool,
-}
-````
-
-MongoDB 默认主键字段叫 `_id`,但 Rust 里写 `id` 更自然。`#[serde(rename = "_id")]` 让 Rust 字段名 `id` 序列化到 MongoDB/JSON 时变成 `_id`。请求 JSON 用 `{"_id":1,...}`,Rust 里用 `member.id`。
-
-### 选择 collection
-
-````rust
-let collection: Collection<Member> = client.database("axum-mongo").collection("members");
-````
-
-`Collection<Member>` 告诉 driver:从这个 collection 读写的 document 和 Rust `Member` 互相转换。然后 `.with_state(collection)` 放进 axum state,handler 用 `State(db): State<Collection<Member>>` 提取。
-
-### CRUD 四个操作
-
-**创建 `insert_one`:** 返回 `InsertOneResult`(含 inserted id)。
-
-**查询 `find_one`:** 用 `doc! { "_id": id }` 做过滤条件,返回 `Option<Member>`(可能找不到 → `None` → JSON `null`)。`doc!` 宏构造 BSON document。
-
-**替换 `replace_one`:** `replace_one(filter, replacement)` 是**替换整个 document**(不是局部更新某字段)。局部更新用 `$set` 操作。
-
-**删除 `delete_one`:** 返回 `DeleteResult`(含删除条数)。
+和 ch33 的 `Pool` 作 State 同构：把 `Collection<Member>` 塞进 `with_state`，handler 用 `State<Collection<Member>>` 取。`Collection` 内部是 `Arc` 引用 client，可 cheap clone。
 
 ## 常见问题
 
-**字段为什么叫 `_id`?** MongoDB 默认主键是 `_id`,Rust 用 `id` 更顺手,`#[serde(rename = "_id")]` 做映射。
+**为什么用 `replace_one` 不用 `update_one`？** `replace_one` 整体替换（接收完整 `Member`），`update_one` 部分更新（用 `$set` 操作符）。这章 PUT 语义是整体替换所以用 `replace_one`。
 
-**MongoDB 需要 migration 吗?** example 没有 migration——文档数据库通常不要求先建表结构。但真实项目仍需管理数据结构变化,只是方式和 SQL migration 不同。
+**MongoDB 需要建表/migration 吗？** 不需要。MongoDB 无 schema，第一次写入时自动创建集合。结构变化也不用 migration（直接写新字段即可）。
 
-**`replace_one` 是局部更新吗?** 不是,是替换整个 document。只改某字段用 `$set`。
-
-**`read_member` 为什么返回 `Option<Member>`?** 按 `_id` 查可能找不到,找不到返回 `None`(JSON `null`)。
-
-**Client 需要连接池吗?** 不需要,mongo-rust-driver 自带连接池,`Client` 就是池,可廉价 clone 放 state。
+**`_id` 必须自己指定吗？** 不指定的话 MongoDB 自动生成 `ObjectId`（24 字符 hex 字符串）。这章用 `u32` 自定义 id（业务可读），所以 `Member` 自己管 `id` 字段。
 
 ## 手写任务
 
-按下面顺序敲:
-
-1. 定义 `Member`,给 `id` 加 `#[serde(rename = "_id")]`。
-2. 创建 MongoDB `Client`。
-3. `run_command(doc! { "ping": 1 })` 验证连接。
-4. `app(client)` 里拿 `Collection<Member>`。
-5. `.with_state(collection)` 放进 Router。
-6. 写 `create_member` 调 `insert_one`。
-7. 写 `read_member` 调 `find_one`。
-8. 写 `update_member` 和 `delete_member`。
-
-加深练习:
-
-1. 新增 `/list` 查询所有 member。
-2. `replace_one` 改成只更新 `active` 字段(用 `$set`)。
-3. 找不到 member 时返回 404 而不是 JSON `null`。
+1. 把 `update_member` 改成 `update_one(doc!{"_id":input.id}, doc!{"$set": {"active": input.active}})`，只更新 active 字段。
+2. 加 `list_members`：`db.find(doc!{}, None).await` 返回所有，用 `StreamExt::next` 遍历。
+3. 加错误处理区分"找不到"（404）和"数据库错误"（500）——`find_one` 返回 `Option`，可以判 None。
 
 ## 小结
 
-- MongoDB 接入 axum 核心模型:`Client` 连接 → `database()` 选库 → `collection()` 选集合并指定文档类型 → `State<Collection<Member>>` 共享 → handler 调 CRUD 方法 → serde 负责 struct ↔ BSON/JSON。
-- **MongoDB `Client` 自带连接池**,不需自己套 bb8,可廉价 clone 放 state;和 SQLx 一样是"driver 自带池",和 tokio-postgres/Redis(需 bb8)形成对比。
-- `_id` 是最容易踩坑的点:`#[serde(rename = "_id")]` 让 Rust 字段 `id` 映射到 MongoDB `_id`。
-- `doc!` 宏构造 BSON document(过滤条件等);`find_one` 返回 `Option`,`replace_one` 是整文档替换不是局部更新。
-- MongoDB 不强制先建表,适合灵活 schema 文档数据。
+这章用 3 步讲了 MongoDB CRUD：
+
+1. **连接 + model**：`Client::with_uri_str` + ping 验证，`Collection<Member>` 作为 State。
+2. **create/read**：`insert_one` + `find_one`，`Collection<T>` 自动 Member↔BSON 转换。
+3. **update/delete**：`replace_one`（整体替换）+ `delete_one`，CRUD 完整。
+
+核心：MongoDB 无 schema、用 `doc!` 查询、`Collection<T>` 自动 serde、错误只有一层（原生 async）。和 SQL 数据库对比：灵活 schema 换 migration 成本，文档查询换 SQL 表达力。
 
 ## 源码对照
 

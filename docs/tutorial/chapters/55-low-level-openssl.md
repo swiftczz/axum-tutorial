@@ -2,13 +2,11 @@
 
 对应示例：`examples/low-level-openssl`
 
-第三个低层 TLS 示例,结构和前两章相同,TLS 库换成 OpenSSL。用 OpenSSL 手写 TLS accept loop,把 `tokio_openssl::SslStream` 交给 Hyper/Axum。
+第 53 章 rustls、第 54 章 native-tls 之后，这章用 **OpenSSL 直接版本**——`openssl` crate 直接绑定 OpenSSL C 库，比 native-tls 暴露更多底层 API。代码骨架还是和 ch53 一样，只是 TLS 库换。
 
-> **本章只讲和 rustls/native-tls 的差异**。完整 accept loop + TLS + Hyper 桥接链路见第 53 章——TokioIo 适配、service_fn 桥接、auto::Builder 等都一样。
+分 2 步：先建 `SslAcceptor`（mozilla_modern_v5 预设），再写手动 TCP+TLS 循环。
 
-
-
-相比前面章节新引入：**`SslAcceptor::mozilla_modern_v5`、`SslStream::accept(Pin::new(...))`、OpenSSL**。
+相比前面章节新引入：**`openssl` crate（直接 OpenSSL 绑定）、`SslAcceptor::mozilla_modern_v5`（预设安全配置）、`SslStream::accept`（手动握手）**。
 
 ## Cargo.toml
 
@@ -21,24 +19,155 @@ publish = false
 
 [dependencies]
 axum = "0.8"
-hyper = { version = "1.0.0", features = ["full"] }
-hyper-util = { version = "0.1" }
+hyper = "1.0.0"
+hyper-util = { version = "0.1", features = ["server", "tokio"] }
 openssl = "0.10"
-tokio = { version = "1", features = ["full"] }
-tokio-openssl = "0.6"
-tower = { version = "0.5.2", features = ["make"] }
+tokio = { version = "1.0", features = ["full"] }
+tokio-openssl = "0.6.1"
+tower = "0.5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ````
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## 关键概念
+---
 
-> **新面孔：OpenSSL 差异**
+## 第一步：`SslAcceptor` 用 mozilla_modern 预设
+
+OpenSSL 的 `SslAcceptor` 提供 `mozilla_modern_v5` / `mozilla_intermediate_v5` 等预设——直接套用 Mozilla 推荐的安全配置（cipher suite、协议版本、curve 等）。
+
+````rust
+use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
+use std::path::PathBuf;
+
+# #[tokio::main]
+# async fn main() {
+    // mozilla_modern_v5：Mozilla 推荐的现代配置（TLS 1.2+1.3，强 cipher）
+    let mut tls_builder = SslAcceptor::mozilla_modern_v5(SslMethod::tls()).unwrap();
+
+    tls_builder
+        .set_certificate_file(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("self_signed_certs").join("cert.pem"),
+            SslFiletype::PEM,
+        )
+        .unwrap();
+
+    tls_builder
+        .set_private_key_file(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("self_signed_certs").join("key.pem"),
+            SslFiletype::PEM,
+        )
+        .unwrap();
+
+    // 验证私钥和证书匹配
+    tls_builder.check_private_key().unwrap();
+
+    let tls_acceptor = tls_builder.build();
+#     // ...
+# }
+````
+
+> **新面孔：`SslAcceptor::mozilla_modern_v5`**
 >
-> `SslAcceptor::mozilla_modern_v5` 模板 + `set_certificate_file`/`set_private_key_file` + `check_private_key`。每连接 `Ssl::new` + `SslStream::accept(Pin::new(...))`。
+> OpenSSL 推荐用 Mozilla 预设而不是手配置 cipher——Mozilla 持续更新推荐配置，`mozilla_modern_v5` 是当前最严格的（TLS 1.2+1.3，禁用弱算法）。
+>
+> 三档预设：
+> - `mozilla_modern_v5`：最严（TLS 1.2+1.3），现代浏览器
+> - `mozilla_intermediate_v5`：中（TLS 1.0+1.2+1.3），兼容老客户端
+> - 手动：自己配 cipher，**不推荐**（容易出错）
 
+> **新面孔：`set_certificate_file` / `set_private_key_file`**
+>
+> OpenSSL 分别加载 cert 和 key（不像 native-tls 打包成 Identity）。`SslFiletype::PEM` 指定 PEM 格式（也支持 DER）。
+>
+> `check_private_key()` 验证私钥和证书匹配（防止配错）。
+
+> **新面孔：`SslMethod::tls()`**
+>
+> 表示支持 TLS（不是固定 1.2 或 1.3，由 cipher suite 决定）。OpenSSL 1.1+ 都支持。
+
+---
+
+## 第二步：手动 TCP+TLS 循环（含手动 `SslStream::accept`）
+
+这步和 ch53/54 骨架相同，但 OpenSSL 的握手比 rustls/native-tls 多一层手动——要先 `Ssl::new` + `SslStream::new` 创建 stream，再 `SslStream::accept` 握手。
+
+````rust
+use axum::{http::Request, routing::get, Router};
+use hyper::body::Incoming;
+use hyper_util::rt::{TokioExecutor, TokioIo};
+use openssl::ssl::Ssl;
+use std::pin::Pin;
+use tokio::net::TcpListener;
+use tokio_openssl::SslStream;
+use tower::Service;
+use tracing::info;
+
+# #[tokio::main]
+# async fn main() {
+#     // ... tls_acceptor 已 build ...
+    let bind = "[::1]:3000";
+    let tcp_listener = TcpListener::bind(bind).await.unwrap();
+    info!("HTTPS server listening on {bind}. To contact curl -k https://localhost:3000");
+    let app = Router::new().route("/", get(handler));
+
+    loop {
+        let tower_service = app.clone();
+        let tls_acceptor = tls_acceptor.clone();
+
+        let (cnx, addr) = tcp_listener.accept().await.unwrap();
+
+        tokio::spawn(async move {
+            // OpenSSL 多一步：先 Ssl::new 创建 context，再 SslStream::new 包 TCP
+            let ssl = Ssl::new(tls_acceptor.context()).unwrap();
+            let mut tls_stream = SslStream::new(ssl, cnx).unwrap();
+
+            // 手动握手
+            if let Err(err) = SslStream::accept(Pin::new(&mut tls_stream)).await {
+                tracing::error!("error during tls handshake connection from {}: {}", addr, err);
+                return;
+            }
+
+            let stream = TokioIo::new(tls_stream);
+
+            let hyper_service = hyper::service::service_fn(move |request: Request<Incoming>| {
+                tower_service.clone().call(request)
+            });
+
+            let ret = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+                .serve_connection_with_upgrades(stream, hyper_service)
+                .await;
+
+            if let Err(err) = ret {
+                tracing::warn!("error serving connection from {}: {}", addr, err);
+            }
+        });
+    }
+# }
+
+async fn handler() -> &'static str {
+    "Hello, World!"
+}
+````
+
+> **新面孔：`Ssl::new` + `SslStream::new` + `SslStream::accept`**
+>
+> OpenSSL 三步握手（比 rustls/native-tls 多几步）：
+>
+> 1. `Ssl::new(tls_acceptor.context())`：从 acceptor 的 context 创建单连接的 `Ssl` 对象
+> 2. `SslStream::new(ssl, tcp_stream)`：把 Ssl 和 TCP 流绑成 `SslStream`
+> 3. `SslStream::accept(Pin::new(&mut tls_stream)).await`：异步执行 TLS 握手
+>
+> `Pin::new(&mut tls_stream)` 是因为 `accept` 要求 `Pin<&mut Self>`（OpenSSL async API 要求 self 被 pin 住保证内存地址稳定）。
+
+> **新面孔：`Pin`**
+>
+> Rust 的指针封装，保证指向的对象不会被 move（地址稳定）。OpenSSL 的 async API 用自引用结构，必须 pin。`tokio_openssl::SslStream::accept(Pin<&mut Self>)` 强制 pin。
+>
+> 普通业务代码很少直接用 Pin，OpenSSL 这种 C 绑定库才需要。
+
+---
 
 ## 完整代码
 
@@ -68,14 +197,18 @@ async fn main() {
 
     tls_builder
         .set_certificate_file(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("self_signed_certs").join("cert.pem"),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("self_signed_certs")
+                .join("cert.pem"),
             SslFiletype::PEM,
         )
         .unwrap();
 
     tls_builder
         .set_private_key_file(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("self_signed_certs").join("key.pem"),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("self_signed_certs")
+                .join("key.pem"),
             SslFiletype::PEM,
         )
         .unwrap();
@@ -87,27 +220,38 @@ async fn main() {
     let bind = "[::1]:3000";
     let tcp_listener = TcpListener::bind(bind).await.unwrap();
     info!("HTTPS server listening on {bind}. To contact curl -k https://localhost:3000");
-
     let app = Router::new().route("/", get(handler));
 
     loop {
         let tower_service = app.clone();
         let tls_acceptor = tls_acceptor.clone();
 
+        // Wait for new tcp connection
         let (cnx, addr) = tcp_listener.accept().await.unwrap();
 
         tokio::spawn(async move {
             let ssl = Ssl::new(tls_acceptor.context()).unwrap();
             let mut tls_stream = SslStream::new(ssl, cnx).unwrap();
-
             if let Err(err) = SslStream::accept(Pin::new(&mut tls_stream)).await {
-                error!("error during tls handshake connection from {}: {}", addr, err);
+                error!(
+                    "error during tls handshake connection from {}: {}",
+                    addr, err
+                );
                 return;
             }
 
+            // Hyper has its own `AsyncRead` and `AsyncWrite` traits and doesn't use tokio.
+            // `TokioIo` converts between them.
             let stream = TokioIo::new(tls_stream);
 
+            // Hyper also has its own `Service` trait and doesn't use tower. We can use
+            // `hyper::service::service_fn` to create a hyper `Service` that calls our app through
+            // `tower::Service::call`.
             let hyper_service = hyper::service::service_fn(move |request: Request<Incoming>| {
+                // We have to clone `tower_service` because hyper's `Service` uses `&self` whereas
+                // tower's `Service` requires `&mut self`.
+                //
+                // We don't need to call `poll_ready` since `Router` is always ready.
                 tower_service.clone().call(request)
             });
 
@@ -132,88 +276,56 @@ async fn handler() -> &'static str {
 ````bash
 cd examples
 cargo run -p example-low-level-openssl
-curl -k https://localhost:3000
-````
 
-本机缺少 OpenSSL 开发库编译会失败——这是本地依赖环境问题,不是 axum handler 问题。
+curl -k https://localhost:3000/
+# Hello, World!
+````
 
 ## 解读
 
-### 和 rustls/native-tls 的三个差异
+### ch53/54/55 三章对比
 
-**差异 1:用 `SslAcceptor::mozilla_modern_v5` 模板**
-
-````rust
-let mut tls_builder = SslAcceptor::mozilla_modern_v5(SslMethod::tls()).unwrap();
-````
-
-`mozilla_modern_v5` 是 OpenSSL 提供的现代 TLS 配置模板(rustls 用 `ServerConfig::builder()` 从零构建,native-tls 用 `NativeTlsAcceptor::builder(id)`)。
-
-**差异 2:分别加载证书和私钥 + `check_private_key`**
-
-````rust
-tls_builder.set_certificate_file(cert_path, SslFiletype::PEM).unwrap();
-tls_builder.set_private_key_file(key_path, SslFiletype::PEM).unwrap();
-tls_builder.check_private_key().unwrap();   // 确认证书和私钥匹配
-````
-
-OpenSSL 分别加载证书和私钥文件,然后 `check_private_key` 确认匹配(rustls 用 `with_single_cert(certs, key)` 一起传,native-tls 用 `Identity::from_pkcs8` 合成)。
-
-**差异 3:每连接显式创建 `Ssl` + `SslStream` + `Pin`**
-
-````rust
-let ssl = Ssl::new(tls_acceptor.context()).unwrap();
-let mut tls_stream = SslStream::new(ssl, cnx).unwrap();
-if let Err(err) = SslStream::accept(Pin::new(&mut tls_stream)).await { ... }
-````
-
-OpenSSL 需为每个连接显式创建 `Ssl` 和 `SslStream`,然后 `SslStream::accept(Pin::new(&mut tls_stream)).await` 完成 TLS 握手。**`Pin::new` 是因为 `tokio_openssl::SslStream::accept` 需要 pinned stream**(见第 8 章对 `Pin` 的解释——自引用/状态机不能随便移动)。
-
-之后 `TokioIo::new(tls_stream)` + `service_fn` + `auto::Builder` 和前两章完全一样。
-
-## 低层 TLS 三部曲选型总结(53/54/55)
-
-| 维度 | rustls(53) | native-tls(54) | openssl(55) |
+| 维度 | rustls（ch53） | native-tls（ch54） | openssl（这章） |
 | --- | --- | --- | --- |
-| **依赖** | 纯 Rust,无 C 依赖 | 系统库(Secure Transport/OpenSSL/SChannel) | 系统的 OpenSSL 库 |
-| **跨平台行为** | 一致(同一套代码) | 各平台不同(依赖系统 TLS 实现) | 一致(都是 OpenSSL) |
-| **ALPN / HTTP/2** | 原生支持 | 支持不一致,跨平台难保证 | 支持 |
-| **证书来源** | 默认无 root store,需 `rustls-native-certs`/`webpki-roots` | 系统信任库 | 系统信任库 |
-| **部署体积** | 小(适合容器) | 中 | 中(需带 OpenSSL) |
-| **合规场景** | 通用 | 通用 | 金融/合规有时强制 OpenSSL |
+| 实现 | 纯 Rust | 系统 OpenSSL/SChannel | 直接 OpenSSL C |
+| 握手 API | `TlsAcceptor::accept(stream)` | `TlsAcceptor::accept(stream)` | `Ssl::new` + `SslStream::accept(Pin)` |
+| 配置 | `ServerConfig::builder()` | `Identity` + builder | `SslAcceptor::mozilla_modern_v5` |
+| Pin 要求 | 不需要 | 不需要 | **需要** |
+| 编译依赖 | 无 | 系统 OpenSSL | OpenSSL dev lib |
+| 适合场景 | 默认选择 | FIPS/系统证书 | 需要特定 OpenSSL 功能 |
 
-**选型建议:**
+### 为什么有这章
 
-- **新项目、容器化部署** → **rustls**。纯 Rust 无 C 依赖,编译简单,跨平台一致,体积小。
-- **需要和系统 TLS 深度集成** → **native-tls**(macOS 用 Secure Transport,行为最"原生")。
-- **合规要求强制 OpenSSL、或已有 OpenSSL 证书/配置** → **openssl**。
-- **需 HTTP/2 注意**:native-tls ALPN 支持跨平台不一致,优先 rustls。
+OpenSSL 直接绑定比 native-tls 暴露更多底层 API（如手动 ALPN、特定 cipher 控制、自定义 verify callback）。绝大多数场景用 rustls（ch53）或 native-tls（ch54）就够了，这章为特殊需求保留。
 
-三个库 API 各不同,但**接入 axum 的模式完全一样**(accept loop → TLS → `TokioIo` → Hyper → Router)。理解了这个模式,换库只是换 TLS 握手那段代码。
+### 选哪个
+
+- **新项目优先 rustls**（ch53）—— 纯 Rust 无 C 依赖
+- **需要系统证书/FIPS** 选 native-tls（ch54）
+- **需要 OpenSSL 特定功能**（如 OCSP stapling、特定 cipher 控制）选 openssl（这章）
 
 ## 常见问题
 
-**OpenSSL 版本和系统有关吗?** 有关,openssl crate 依赖本机 OpenSSL 或构建配置。
+**为什么 OpenSSL 握手要 `Pin::new`？** OpenSSL 用自引用结构（C 风格），async API 要求对象地址稳定，必须 pin。rustls/native-tls 在内部处理了 pin，外部 API 不暴露。
 
-**为什么用 `Pin`?** `tokio_openssl::SslStream::accept` 需 pinned stream,所以 `Pin::new(&mut tls_stream)`。
+**编译报错 "could not find openssl"** 装 OpenSSL dev：Ubuntu `apt install libssl-dev`，macOS `brew install openssl@3 && export OPENSSL_DIR=...`。
 
-**和 rustls 怎么选?** 按项目依赖、部署环境、合规要求选。纯 Rust 项目偏向 rustls,有些环境要求 OpenSSL。
+**`mozilla_modern_v5` 真的安全吗？** Mozilla 官方维护的安全预设，持续更新。比手配 cipher 安全（人手配容易遗漏）。
 
 ## 手写任务
 
-1. 创建 `SslAcceptor::mozilla_modern_v5`。
-2. 加载证书和私钥。
-3. `check_private_key` 检查匹配。
-4. accept TCP。
-5. 创建 `SslStream` 并 TLS handshake(用 `Pin`)。
-6. 交给 Hyper/Axum(同第 53 章)。
+1. 对比 ch53 rustls 版本，把 `SslStream::accept(Pin::new(...))` 换成 rustls 的 `tls_acceptor.accept(stream)`，看简化了多少。
+2. 加 ALPN：`tls_builder.set_alpn_protos(b"\x02h2\x08http/1.1")`。
+3. 改用 `mozilla_intermediate_v5` 预设，对比 cipher suite 差异。
 
 ## 小结
 
-- OpenSSL 低层接入链路:`TCP → OpenSSL TLS handshake → TokioIo → Hyper → axum`,和前两章结构相同,差异只在 TLS 库 API。
-- 三个差异:`mozilla_modern_v5` 模板(对比 rustls/native-tls 的 builder)、分别加载证书和私钥 + `check_private_key`、每连接显式创建 `Ssl` + `SslStream` + `Pin::new`。
-- **三种低层 TLS 示例的共同点**:TLS 只负责把 TCP stream 变成安全 stream,后面的 HTTP 和 axum 路由模型不变;接入模式都是 accept loop → TLS → `TokioIo` → Hyper → Router。
-- 选型:新项目/容器优先 rustls(纯 Rust、跨平台一致、体积小);需系统 TLS 深度集成用 native-tls;合规强制 OpenSSL 或已有 OpenSSL 配置用 openssl。
+这章用 2 步讲了 OpenSSL 版 low-level HTTPS server：
+
+1. **`SslAcceptor::mozilla_modern_v5`**：Mozilla 安全预设 + `set_certificate_file` + `set_private_key_file` + `check_private_key`。
+2. **手动握手（含 Pin）**：`Ssl::new` + `SslStream::new` + `SslStream::accept(Pin::new(...))`，比 rustls/native-tls 多几步。
+
+核心：ch53/54/55 三章骨架完全相同，TLS backend 不同。OpenSSL 版 API 最繁琐但暴露最多底层控制；新项目优先 rustls。
 
 ## 源码对照
 
