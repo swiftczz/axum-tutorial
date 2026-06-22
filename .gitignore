@@ -1,0 +1,58 @@
+# ---- Rust ----
+# 编译产物
+target/
+**/target/
+# 依赖锁定文件（库项目不提交 lock，应用项目可提交；本仓库 examples 作为应用 workspace，保留 Cargo.lock）
+# Cargo.lock
+
+# sqlx 离线查询缓存（按需保留，CI 编译时用）
+# .sqlx/
+
+# ---- 运行时生成的文件 ----
+# 文件上传示例生成的目录
+uploads/
+tmp_uploads/
+
+# ---- 操作系统 ----
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+# 缩略图
+._*
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+# Linux
+*~
+
+# ---- 编辑器 / IDE ----
+# VS Code
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+# JetBrains（IntelliJ / CLion / RustRover）
+.idea/
+*.iml
+# Vim
+*.swp
+*.swo
+*~
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ---- 环境与密钥 ----
+.env
+.env.local
+.env.*.local
+
+# ---- 数据库 / 本地数据 ----
+*.db
+*.sqlite
+*.sqlite3
+
+# ---- 日志 ----
+*.log
