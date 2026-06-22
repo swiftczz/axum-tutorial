@@ -34,7 +34,7 @@ async fn main() {
         .await
         .unwrap();
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await;
+    axum::serve(listener, app).await.unwrap();
 }
 
 // middleware that shows how to consume the request body upfront
@@ -49,7 +49,7 @@ async fn print_request_body(request: Request, next: Next) -> Result<impl IntoRes
 async fn buffer_request_body(request: Request) -> Result<Request, Response> {
     let (parts, body) = request.into_parts();
 
-    // this won't work if the body is a long-running stream
+    // this won't work if the body is an long running stream
     let bytes = body
         .collect()
         .await

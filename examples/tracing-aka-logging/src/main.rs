@@ -65,22 +65,21 @@ async fn main() {
                     // You can use `_span.record("some_other_field", value)` in one of these
                     // closures to attach a value to the initially empty field in the info_span
                     // created above.
-                    tracing::debug!("started processing request")
                 })
                 .on_response(|_response: &Response, _latency: Duration, _span: &Span| {
-                    tracing::debug!("finished processing request")
+                    // ...
                 })
                 .on_body_chunk(|_chunk: &Bytes, _latency: Duration, _span: &Span| {
-                    tracing::debug!("sending body chunk")
+                    // ...
                 })
                 .on_eos(
                     |_trailers: Option<&HeaderMap>, _stream_duration: Duration, _span: &Span| {
-                        tracing::debug!("stream closed")
+                        // ...
                     },
                 )
                 .on_failure(
                     |_error: ServerErrorsFailureClass, _latency: Duration, _span: &Span| {
-                        tracing::error!("something went wrong")
+                        // ...
                     },
                 ),
         );
@@ -88,7 +87,7 @@ async fn main() {
     // run it
     let listener = TcpListener::bind("127.0.0.1:3000").await.unwrap();
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await;
+    axum::serve(listener, app).await.unwrap();
 }
 
 async fn handler() -> Html<&'static str> {

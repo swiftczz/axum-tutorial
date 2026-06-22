@@ -159,7 +159,7 @@ let app = Router::new()
 
 ### 为什么 request-id 的顺序很重要
 
-第 23 章会出现这种写法：
+第 25 章会出现这种写法：
 
 ````rust
 ServiceBuilder::new()

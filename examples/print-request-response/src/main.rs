@@ -35,7 +35,7 @@ async fn main() {
         .await
         .unwrap();
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await;
+    axum::serve(listener, app).await.unwrap();
 }
 
 async fn print_request_response(

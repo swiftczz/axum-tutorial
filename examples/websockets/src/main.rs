@@ -34,12 +34,12 @@ use tower_http::{
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-// Allows extracting the IP of the connecting user
+//allows to extract the IP of connecting user
 use axum::extract::connect_info::ConnectInfo;
 use axum::extract::ws::CloseFrame;
 
-// Allows splitting the websocket stream into separate TX and RX branches
-use futures_util::{sink::SinkExt, stream::StreamExt};
+//allows to split the websocket stream into separate TX and RX branches
+use futures::{sink::SinkExt, stream::StreamExt};
 
 #[tokio::main]
 async fn main() {
@@ -73,7 +73,8 @@ async fn main() {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .await;
+    .await
+    .unwrap();
 }
 
 /// The handler for the HTTP request (this gets called when the HTTP request lands at the start

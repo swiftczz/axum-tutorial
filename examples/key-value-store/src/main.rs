@@ -78,7 +78,7 @@ async fn main() {
         .await
         .unwrap();
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await;
+    axum::serve(listener, app).await.unwrap();
 }
 
 type SharedState = Arc<RwLock<AppState>>;
@@ -124,7 +124,6 @@ fn admin_routes() -> Router<SharedState> {
         state.write().unwrap().db.remove(&key);
     }
 
-    #[allow(deprecated)] // FIXME
     Router::new()
         .route("/keys", delete(delete_all_keys))
         .route("/key/{key}", delete(remove_key))

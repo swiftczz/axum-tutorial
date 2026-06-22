@@ -48,7 +48,8 @@ async fn main() {
     // Run the server with graceful shutdown
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
-        .await;
+        .await
+        .unwrap();
 }
 
 async fn shutdown_signal() {

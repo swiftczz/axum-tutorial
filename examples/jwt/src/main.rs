@@ -73,7 +73,7 @@ async fn main() {
         .await
         .unwrap();
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await;
+    axum::serve(listener, app).await.unwrap();
 }
 
 async fn protected(claims: Claims) -> Result<String, AuthError> {
@@ -170,7 +170,7 @@ impl Keys {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct Claims {
     sub: String,
     company: String,

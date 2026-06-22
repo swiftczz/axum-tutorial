@@ -32,7 +32,7 @@ async fn main() {
         .await
         .unwrap();
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await;
+    axum::serve(listener, app).await.unwrap();
 }
 
 fn app() -> Router {
@@ -83,7 +83,12 @@ mod tests {
     #[tokio::test]
     async fn test_v1() {
         let response = app()
-            .oneshot(Request::get("/v1/foo").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/foo")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -98,7 +103,12 @@ mod tests {
     #[tokio::test]
     async fn test_v4() {
         let response = app()
-            .oneshot(Request::get("/v4/foo").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/v4/foo")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
