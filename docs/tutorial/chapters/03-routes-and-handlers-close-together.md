@@ -20,7 +20,7 @@ tokio = { version = "1.0", features = ["full"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

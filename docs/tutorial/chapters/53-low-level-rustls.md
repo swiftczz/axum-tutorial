@@ -4,6 +4,10 @@
 
 不用 `axum-server::bind_rustls`(第 46 章高层封装),手写 TCP accept loop,用 `tokio-rustls` 完成 TLS 握手后交给 Hyper/Axum。这是"低层 TLS 三部曲"(53 rustls / 54 native-tls / 55 openssl)的基础,讲透完整 accept loop + TLS + Hyper 桥接链路。
 
+
+
+相比前面章节新引入：**低层 rustls accept loop、`ServerConfig` + ALPN、`TokioIo` + `service_fn` + `auto::Builder`**。
+
 ## Cargo.toml
 
 ````toml
@@ -26,7 +30,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{extract::Request, routing::get, Router};

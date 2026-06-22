@@ -4,6 +4,10 @@
 
 上一章是普通 WebSocket,这章重点不是聊天业务,而是 **WebSocket over HTTP/2**:学会用 `axum-server` + rustls 启动 HTTPS 服务,启用 HTTP/2 CONNECT protocol。
 
+
+
+相比前面章节新引入：**HTTP/2 WebSocket、`enable_connect_protocol`、ALPN 协商**。
+
 ## Cargo.toml
 
 ````toml
@@ -26,7 +30,7 @@ axum 启用 `ws` + `http2` feature;`axum-server` 启用 `tls-rustls`。
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

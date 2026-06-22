@@ -4,6 +4,10 @@
 
 上一章 JWT 是"服务端自己签发 token",这章 OAuth 是"把用户带到第三方平台登录,第三方回调后再建立本应用自己的 session"。理解 OAuth 授权码流程,在 axum 中处理第三方登录跳转、回调、CSRF state、session cookie、受保护页面。示例用 Discord OAuth。
 
+
+
+相比前面章节新引入：**OAuth 授权码流程、CSRF state 防 login CSRF、`MemoryStore` session、Bearer token**。
+
 ## Cargo.toml
 
 ````toml
@@ -29,7 +33,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs(核心版)
+## 完整代码(核心版)
 
 ````rust
 // 1. AppState:保存 MemoryStore 和 BasicClient

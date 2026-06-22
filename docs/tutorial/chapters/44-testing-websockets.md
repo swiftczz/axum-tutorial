@@ -4,6 +4,10 @@
 
 WebSocket 测试比普通 HTTP 接口复杂——不是一次请求一次响应而是持续双向连接。本章学两种测试方式:启动真实服务器做**集成测试**,把 socket 拆成 `Sink`/`Stream` 后用 channel 做**单元测试**。
 
+
+
+相比前面章节新引入：**集成测试（真实服务 + `tokio_tungstenite`）vs 单元测试（泛型 `Sink`/`Stream` + channel）**。
+
 ## Cargo.toml
 
 ````toml
@@ -23,7 +27,7 @@ tokio-tungstenite = "0.29"
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

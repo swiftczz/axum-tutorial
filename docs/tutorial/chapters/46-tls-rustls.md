@@ -4,6 +4,10 @@
 
 用 `axum-server` 和 rustls 启动 HTTPS 服务,并启动一个 HTTP 服务把请求重定向到 HTTPS。理解 TLS、HTTPS、证书、ALPN。
 
+
+
+相比前面章节新引入：**`RustlsConfig::from_pem_file`、`axum_server::bind_rustls`、HTTP→HTTPS 重定向**。
+
 ## Cargo.toml
 
 ````toml
@@ -24,7 +28,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 #![allow(unused_imports)]

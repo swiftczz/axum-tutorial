@@ -4,6 +4,10 @@
 
 上一章用 SQLx,这章换成更底层的 `tokio-postgres`,并用 `bb8` 提供连接池。多一个角色:**连接管理器 manager**——告诉连接池如何创建 PostgreSQL 连接。理解连接管理器、连接池、查询 row、自定义 extractor。
 
+
+
+相比前面章节新引入：**`PostgresConnectionManager` + bb8 Pool、`query_one` + `try_get`、自定义 `DatabaseConnection` extractor**。
+
 ## Cargo.toml
 
 ````toml
@@ -25,7 +29,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

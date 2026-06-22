@@ -4,6 +4,10 @@
 
 extractor 解析请求失败时,axum 会返回默认的 rejection(错误响应)。本章把这个默认 rejection 改成项目自己的 JSON 错误格式。本章有三个源码文件,演示同一目标的**三种写法**,先看共同目标,再对比差异。
 
+
+
+相比前面章节新引入：**`WithRejection`、`#[derive(FromRequest)]`、手写 `FromRequest`、`MatchedPath`**。
+
 ## Cargo.toml
 
 ````toml
@@ -28,7 +32,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 mod custom_extractor;

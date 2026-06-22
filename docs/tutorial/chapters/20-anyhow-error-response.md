@@ -4,6 +4,10 @@
 
 上一章设计了完整的 `AppError`,这章展示一个更小、更常见的技巧:业务函数返回 `anyhow::Error`,handler 返回 `Result<_, AppError>`,用 `From` 自动转换,`AppError` 实现 `IntoResponse`。
 
+
+
+相比前面章节新引入：**`anyhow::Error` newtype 包装、blanket `impl From`、orphan rule**。
+
 ## Cargo.toml
 
 ````toml
@@ -25,7 +29,7 @@ tower = { version = "0.5.2", features = ["util"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

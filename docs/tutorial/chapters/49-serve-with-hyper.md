@@ -4,6 +4,10 @@
 
 前面一直用 `axum::serve(listener, app)`,这章往下看一层:不用它,自己写 accept loop,把每个 TCP 连接交给 Hyper。理解 axum 和 hyper/Tower 的边界。
 
+
+
+相比前面章节新引入：**`axum::serve` 内部就是 hyper、`TokioIo` 适配、`service_fn` 桥接 Tower/Hyper**。
+
 ## Cargo.toml
 
 ````toml
@@ -23,7 +27,7 @@ tower = { version = "0.5.2", features = ["util"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use std::convert::Infallible;

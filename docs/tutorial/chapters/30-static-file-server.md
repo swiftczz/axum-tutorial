@@ -4,6 +4,10 @@
 
 前两章讲服务端渲染 HTML,这章讲后端直接托管静态文件。用 `tower_http::services::ServeDir` 和 `ServeFile` 提供静态文件服务,理解目录挂载、fallback、SPA 回退和单文件路由。
 
+
+
+相比前面章节新引入：**`ServeDir`/`ServeFile` 是 Tower Service（不是 Handler）、`SetStatus`、SPA fallback**。
+
 ## Cargo.toml
 
 ````toml
@@ -25,7 +29,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

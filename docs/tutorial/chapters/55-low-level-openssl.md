@@ -6,6 +6,10 @@
 
 > **本章只讲和 rustls/native-tls 的差异**。完整 accept loop + TLS + Hyper 桥接链路见第 53 章——TokioIo 适配、service_fn 桥接、auto::Builder 等都一样。
 
+
+
+相比前面章节新引入：**`SslAcceptor::mozilla_modern_v5`、`SslStream::accept(Pin::new(...))`、OpenSSL**。
+
 ## Cargo.toml
 
 ````toml
@@ -29,7 +33,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{http::Request, routing::get, Router};

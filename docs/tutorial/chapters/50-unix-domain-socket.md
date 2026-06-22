@@ -4,6 +4,10 @@
 
 理解 axum 如何监听 Unix domain socket(UDS)而不是 TCP 端口,并为 UDS 提供自定义 `ConnectInfo`。UDS 用于同一台机器上的进程通信。
 
+
+
+相比前面章节新引入：**`UnixListener`（绑定文件路径）、自定义 `Connected` trait、`UCred` 对端凭据**。
+
 ## Cargo.toml
 
 ````toml
@@ -24,7 +28,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 // Unix domain socket 是 Unix 平台能力,只在 unix 平台编译 main

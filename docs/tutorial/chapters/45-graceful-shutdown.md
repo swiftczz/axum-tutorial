@@ -4,6 +4,10 @@
 
 后端服务停止时不应总是"立刻杀掉"。更好的方式:停止接收新请求 → 等正在处理的请求完成 → 退出进程。这就是 graceful shutdown。本章用 `with_graceful_shutdown` 监听 Ctrl+C/SIGTERM,用 `TimeoutLayer` 避免请求永远阻塞关闭。
 
+
+
+相比前面章节新引入：**`with_graceful_shutdown`、`shutdown_signal`（Ctrl+C + SIGTERM）、`TimeoutLayer`**。
+
 ## Cargo.toml
 
 ````toml
@@ -22,7 +26,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use std::time::Duration;

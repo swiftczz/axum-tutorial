@@ -4,6 +4,10 @@
 
 前几章连 PostgreSQL 和 Redis,这章连 MongoDB。用 MongoDB 官方 Rust driver 实现最小 CRUD 接口,理解 database/collection/document、`_id` 映射、`State<Collection<T>>`。MongoDB 是文档型数据库,适合灵活 schema 的文档数据。
 
+
+
+相比前面章节新引入：**MongoDB `Client` 自带连接池、`Collection<T>`、`doc!` 宏、`#[serde(rename = "_id")]`**。
+
 ## Cargo.toml
 
 ````toml
@@ -25,7 +29,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

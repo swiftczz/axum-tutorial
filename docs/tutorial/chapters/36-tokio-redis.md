@@ -4,6 +4,10 @@
 
 前几章连 PostgreSQL,这章连 Redis。用异步 Redis 客户端连接 Redis,理解 `redis::Client`、`bb8` 连接池、`AsyncCommands`,以及 axum handler 读取 Redis 数据。Redis 常用作内存型 key-value 系统(缓存、登录会话、限流计数、排行榜、短期状态)。
 
+
+
+相比前面章节新引入：**`redis::Client` + bb8 Pool、`AsyncCommands`（`get`/`set`）、Redis 单线程与 `MultiplexedConnection`**。
+
 ## Cargo.toml
 
 ````toml
@@ -27,7 +31,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

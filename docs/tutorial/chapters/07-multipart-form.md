@@ -4,6 +4,10 @@
 
 上一章的表单只提交短文本。本章上传文件——文件可能很大,也可能一次传多个,所以不能用普通 `Form<T>`,改用 `Multipart` 逐个读取字段。
 
+
+
+相比前面章节新引入：**`Multipart` extractor、body limit（`DefaultBodyLimit`）、逐个 field 读取**。
+
 ## Cargo.toml
 
 ````toml
@@ -25,7 +29,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

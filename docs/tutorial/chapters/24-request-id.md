@@ -4,6 +4,10 @@
 
 第 22 章讲 `TraceLayer`,第 23 章讲 middleware 如何包住请求和响应。这章把它们串起来:给每个 HTTP 请求加一个 request id,同时放进日志 span 和响应 header,方便后端排障。
 
+
+
+相比前面章节新引入：**`SetRequestIdLayer`、`PropagateRequestIdLayer`、CSRF state**。
+
 ## Cargo.toml
 
 ````toml
@@ -26,7 +30,7 @@ tower-http 启用 `request-id` 和 `trace` feature。
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

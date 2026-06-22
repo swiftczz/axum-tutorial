@@ -4,6 +4,10 @@
 
 把"提取"和"校验"组合成一个 extractor `ValidatedForm<T>`:先用 `Form<T>` 提取输入,再用 `validator` 校验字段,校验通过才进入 handler。这样 handler 不用再写 `if name.is_empty()` 这类校验逻辑。
 
+
+
+相比前面章节新引入：**`validator::Validate`、`#[validate(...)]`、自定义 `ValidatedForm<T>` 组合提取和校验**。
+
 ## Cargo.toml
 
 ````toml
@@ -29,7 +33,7 @@ tower = { version = "0.5.2", features = ["util"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

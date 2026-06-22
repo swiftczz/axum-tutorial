@@ -4,6 +4,10 @@
 
 业务功能很简单(`GET /` 返回 Hello World),但给 Router 加了完整的 HTTP trace 配置。这一章重点不是 handler,而是 `TraceLayer`:request span、matched path 和各类 trace 回调。从这章开始进入中间件、日志、跨域、压缩和指标阶段。
 
+
+
+相比前面章节新引入：**`TraceLayer` 的 5 个回调（on_request/on_response/on_body_chunk/on_eos/on_failure）、`MatchedPath`、`EnvFilter`**。
+
 ## Cargo.toml
 
 ````toml
@@ -23,7 +27,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

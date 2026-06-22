@@ -4,6 +4,10 @@
 
 上一章用 Diesel 同步查询需 `deadpool-diesel` 的 `interact`,这章用 `diesel-async`——查询本身是异步的,可以直接 `.await`,不需要 `interact` 包装。理解它和同步 Diesel 的差异,掌握 async 查询、连接池、自定义 extractor。
 
+
+
+相比前面章节新引入：**`AsyncDieselConnectionManager` + bb8、`AsyncMigrationHarness`、无 `interact` 直接 `.await`**。
+
 ## Cargo.toml
 
 ````toml
@@ -28,7 +32,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

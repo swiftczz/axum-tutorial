@@ -4,6 +4,10 @@
 
 把自定义 extractor 用在一个真实后端场景上:API 版本管理。路径里的 `v1`/`v2`/`v3` 被自定义 extractor 转成 Rust enum `Version`,handler 不用自己 match 字符串。
 
+
+
+相比前面章节新引入：**`FromRequestParts`（只读 parts）、`RequestPartsExt::extract`、`Path<HashMap>`**。
+
 ## Cargo.toml
 
 ````toml
@@ -26,7 +30,7 @@ tower = { version = "0.5.2", features = ["util"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

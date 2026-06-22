@@ -4,6 +4,10 @@
 
 前两章用异步 PostgreSQL 客户端,这章用 Diesel。Diesel 的查询 API 是**同步阻塞风格**,所以用 `deadpool-diesel` 把它接入 axum 异步服务——核心是通过 `conn.interact(...)` 把同步查询扔到阻塞线程池执行。用 Diesel + PostgreSQL 实现用户创建与列表查询,理解 migration、schema、model、连接池、`interact` 的关系。
 
+
+
+相比前面章节新引入：**`embed_migrations!`、`table!`、`deadpool-diesel`、`conn.interact`（本质是 `spawn_blocking`）**。
+
 ## Cargo.toml
 
 ````toml
@@ -38,7 +42,7 @@ CREATE TABLE "users"(
 
 `down.sql` 是 `DROP TABLE "users";`,用于回滚。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

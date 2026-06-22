@@ -4,6 +4,10 @@
 
 用 middleware 统计 HTTP 请求次数和耗时,通过 `/metrics` 暴露 Prometheus 格式指标。日志回答"某次请求发生了什么",指标回答"最近 5 分钟请求量/错误率/P95 耗时是多少"。
 
+
+
+相比前面章节新引入：**`PrometheusBuilder`、`counter!`/`histogram!`、`MatchedPath` 避免 label 爆炸**。
+
 ## Cargo.toml
 
 ````toml
@@ -24,7 +28,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

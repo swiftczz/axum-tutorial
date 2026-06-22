@@ -6,6 +6,10 @@
 
 > **本章只讲和 rustls 的差异**。完整 accept loop + TLS + Hyper 桥接链路见第 53 章——TokioIo 适配、service_fn 桥接、auto::Builder 协商等都一样,这里不重复。
 
+
+
+相比前面章节新引入：**`Identity::from_pkcs8`、native-tls（平台 TLS）、`TlsAcceptor::from` 包装**。
+
 ## Cargo.toml
 
 ````toml
@@ -28,7 +32,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{extract::Request, routing::get, Router};

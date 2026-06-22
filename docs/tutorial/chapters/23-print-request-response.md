@@ -4,6 +4,10 @@
 
 和第 10 章关系很近。第 10 章讲"请求体只能消费一次",这章把同样的思想扩展到**响应 body**——手写打印请求和响应 body 的 middleware,理解为什么读完 body 后必须重新构造 request/response。
 
+
+
+相比前面章节新引入：**请求 body 和响应 body 都只能消费一次、`BodyExt::collect`、middleware 读 body 后重建**。
+
 ## Cargo.toml
 
 ````toml
@@ -23,7 +27,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

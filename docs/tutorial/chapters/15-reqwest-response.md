@@ -4,6 +4,10 @@
 
 这一章接近"代理"场景:axum 服务收到请求后,用 `reqwest` 请求另一个 HTTP 服务,再把对方的响应**流式转发**给客户端。重点是响应转换 `reqwest::Response → axum::Response`,以及第一次正式使用 `State<T>`。
 
+
+
+相比前面章节新引入：**`reqwest::Client` 放入 `State`、`Body::from_stream` 流式转发**。
+
 ## Cargo.toml
 
 ````toml
@@ -27,7 +31,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

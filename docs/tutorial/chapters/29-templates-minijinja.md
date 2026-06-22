@@ -4,6 +4,10 @@
 
 上一章用 Askama 渲染简单模板,这章换成 MiniJinja,并加入更接近真实网站的结构:多个页面共享同一个 layout。理解模板环境、共享布局、模板继承和 `State<Arc<AppState>>`。
 
+
+
+相比前面章节新引入：**MiniJinja `Environment`、`include_str!` 嵌入模板、`context!` 渲染、`State<Arc<AppState>>`**。
+
 ## Cargo.toml
 
 ````toml
@@ -21,7 +25,7 @@ tokio = { version = "1.0", features = ["full"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::extract::State;

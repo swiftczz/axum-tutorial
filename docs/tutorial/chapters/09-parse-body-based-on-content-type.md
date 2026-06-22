@@ -4,6 +4,10 @@
 
 前面学过两种 body 解析:`Json<T>`(ch02)解析 `application/json`,`Form<T>`(ch06)解析 `application/x-www-form-urlencoded`。本章写一个自定义 extractor `JsonOrForm<T>`,根据请求头 `content-type` 自动选择用哪一个。这章比前几章偏 axum 提取器机制。
 
+
+
+相比前面章节新引入：**`FromRequest`（消费 body 的 extractor）、`RequestExt::extract`（复用其他 extractor）、415 Unsupported Media Type**。
+
 ## Cargo.toml
 
 ````toml
@@ -23,7 +27,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

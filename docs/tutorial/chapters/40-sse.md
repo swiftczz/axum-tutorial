@@ -4,6 +4,10 @@
 
 SSE(Server-Sent Events)适合服务端持续推送消息给浏览器。用 axum 的 `Sse` 返回服务端事件流,理解 EventSource、Stream、keep-alive、SSE 集成测试。
 
+
+
+相比前面章节新引入：**SSE（Server-Sent Events）、`Sse<Stream>`、`Event::default().data(...)`、`keep_alive`**。
+
 ## Cargo.toml
 
 ````toml
@@ -31,7 +35,7 @@ reqwest = { version = "0.12", default-features = false, features = ["stream"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

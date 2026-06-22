@@ -4,6 +4,10 @@
 
 前面接口大多返回 JSON 或纯文本,这章开始服务端渲染 HTML。用 Askama 模板引擎在 axum 中渲染 HTML,理解模板文件、模板数据结构和 `IntoResponse` 包装器如何配合。
 
+
+
+相比前面章节新引入：**Askama `#[derive(Template)]`、`#[template(path = ...)]`、`HtmlTemplate<T>` 包装器**。
+
 ## Cargo.toml
 
 ````toml
@@ -35,7 +39,7 @@ tower = { version = "0.5.2", features = ["util"] }
 
 `{{ name }}` 是模板变量,从 Rust 结构体同名字段读取。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use askama::Template;

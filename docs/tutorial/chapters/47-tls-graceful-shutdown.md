@@ -4,6 +4,10 @@
 
 把第 45 章 graceful shutdown 和第 46 章 TLS rustls 合在一起。启动 HTTPS + HTTP 重定向两个服务,理解 `axum_server::Handle` 和 `with_graceful_shutdown` 分别如何关闭两个服务,同一个终止信号同时影响两者。
 
+
+
+相比前面章节新引入：**`axum_server::Handle`（不同于 `with_graceful_shutdown`）、共享 `shutdown_signal` future**。
+
 ## Cargo.toml
 
 ````toml
@@ -24,7 +28,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{

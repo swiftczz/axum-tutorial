@@ -4,6 +4,10 @@
 
 理解反向代理的基本请求转发:客户端访问代理服务,代理把请求转发到后端,响应返回给客户端。上一章是正向代理(客户端显式配置),这章是反向代理(客户端以为在访问服务,代理在服务端内部转发)。
 
+
+
+相比前面章节新引入：**`hyper_util::client::legacy::Client` + `State`、URI 改写、`X-Forwarded-*`**。
+
 ## Cargo.toml
 
 ````toml
@@ -22,7 +26,7 @@ tokio = { version = "1", features = ["full"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+## 完整代码
 
 ````rust
 use axum::{
