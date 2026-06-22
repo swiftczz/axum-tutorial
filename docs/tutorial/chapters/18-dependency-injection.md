@@ -2,7 +2,9 @@
 
 对应示例：`examples/dependency-injection`
 
-真实项目里很重要的设计问题:handler 需要读写用户,但不应该关心用户存在内存、数据库还是远程服务里。本章用 trait object 和泛型**两种方式**注入 `UserRepo`,让 handler 依赖抽象而不是具体实现。
+真实项目里 handler 需要读写用户，但不应该关心用户存在内存还是 PostgreSQL。这章演示两种依赖注入方式，让 handler 依赖抽象（trait）而非具体实现。分 4 步搭。
+
+相比前面章节新引入：**trait object（`Arc<dyn Trait>`）**和**泛型注入（`T: Trait`）**两种设计模式。
 
 ## Cargo.toml
 
@@ -24,7 +26,160 @@ uuid = { version = "1.0", features = ["serde", "v4"] }
 
 > 本地 `axum` 依赖如何配置见 [项目 README](../../../README.md#运行前提)。
 
-## src/main.rs
+---
+
+## 第一步：定义 trait 和内存实现
+
+先定义"用户仓库"的抽象接口——handler 只依赖这个 trait：
+
+````rust
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+use uuid::Uuid;
+
+trait UserRepo: Send + Sync {
+    fn get_user(&self, id: Uuid) -> Option<User>;
+    fn save_user(&self, user: &User);
+}
+````
+
+> **新面孔：`trait UserRepo: Send + Sync`**
+>
+> trait 描述"用户仓库"必须提供的能力：按 id 查询、保存用户。handler 后面只依赖这个 trait，不依赖具体存储。
+>
+> `Send + Sync` 很重要——axum 并发处理请求，state 要能跨线程共享。后面所有 trait bound 都会有这个约束。
+
+然后写一个内存版实现：
+
+````rust
+#[derive(Debug, Clone, Default)]
+struct InMemoryUserRepo {
+    map: Arc<Mutex<HashMap<Uuid, User>>>,
+}
+
+impl UserRepo for InMemoryUserRepo {
+    fn get_user(&self, id: Uuid) -> Option<User> {
+        self.map.lock().unwrap().get(&id).cloned()
+    }
+
+    fn save_user(&self, user: &User) {
+        self.map.lock().unwrap().insert(user.id, user.clone());
+    }
+}
+````
+
+`InMemoryUserRepo` 内部用 `Arc<Mutex<HashMap>>`（和 ch16/17 同理）。真实项目可以实现 `PostgresUserRepo`，只要也实现 `UserRepo`，handler 不用改。
+
+---
+
+## 第二步：方式一——trait object（`Arc<dyn UserRepo>`）
+
+第一种注入方式：用 trait object。state 里存 `Arc<dyn UserRepo>`，运行时动态分发。
+
+````rust
+#[derive(Clone)]
+struct AppStateDyn {
+    user_repo: Arc<dyn UserRepo>,
+}
+````
+
+> **新面孔：`Arc<dyn Trait>`（trait object）**
+>
+> `dyn UserRepo` 表示"一个实现了 UserRepo 的对象，具体类型运行时通过虚表（vtable）找方法"。`Arc` 让多个 handler 共享。
+>
+> trait 必须 **object safe** 才能用 `dyn`：不能有泛型方法、不能返回 `Self`。`UserRepo` 的两个方法都不违反，所以可以用。
+
+handler 只调 trait 方法，不知道具体类型：
+
+````rust
+async fn create_user_dyn(
+    State(state): State<AppStateDyn>,
+    Json(params): Json<UserParams>,
+) -> Json<User> {
+    let user = User {
+        id: Uuid::new_v4(),
+        name: params.name,
+    };
+    state.user_repo.save_user(&user);
+    Json(user)
+}
+````
+
+---
+
+## 第三步：方式二——泛型（`T: UserRepo`）
+
+第二种注入方式：用泛型。编译时确定类型，零动态分发开销。
+
+````rust
+#[derive(Clone)]
+struct AppStateGeneric<T> {
+    user_repo: T,
+}
+
+async fn create_user_generic<T>(
+    State(state): State<AppStateGeneric<T>>,
+    Json(params): Json<UserParams>,
+) -> Json<User>
+where
+    T: UserRepo,
+{
+    let user = User {
+        id: Uuid::new_v4(),
+        name: params.name,
+    };
+    state.user_repo.save_user(&user);
+    Json(user)
+}
+````
+
+> **trait object vs 泛型**
+>
+> | 方式 | 优点 | 缺点 |
+> |---|---|---|
+> | `Arc<dyn Trait>` | handler 类型简单，Router 组装直观 | trait 必须 object safe，有动态分发开销 |
+> | `T: Trait` | 零开销，trait 不需 object safe | handler 多类型参数，Router 要写 turbofish |
+>
+> 新手先用 `Arc<dyn Trait>`，遇到限制再考虑泛型。
+
+Router 组装时泛型要写 turbofish：
+
+````rust
+let using_generic = Router::new()
+    .route("/users/{id}", get(get_user_generic::<InMemoryUserRepo>))
+    .route("/users", post(create_user_generic::<InMemoryUserRepo>))
+    .with_state(AppStateGeneric { user_repo });
+````
+
+---
+
+## 第四步：两套路由 nest 到不同前缀
+
+最终把两套路由挂到不同前缀，方便对比：
+
+````rust
+let using_dyn = Router::new()
+    .route("/users/{id}", get(get_user_dyn))
+    .route("/users", post(create_user_dyn))
+    .with_state(AppStateDyn {
+        user_repo: Arc::new(user_repo.clone()),
+    });
+
+let using_generic = Router::new()
+    .route("/users/{id}", get(get_user_generic::<InMemoryUserRepo>))
+    .route("/users", post(create_user_generic::<InMemoryUserRepo>))
+    .with_state(AppStateGeneric { user_repo });
+
+let app = Router::new()
+    .nest("/dyn", using_dyn)
+    .nest("/generic", using_generic);
+````
+
+---
+
+## 完整代码
 
 ````rust
 use std::{
@@ -72,8 +227,7 @@ async fn main() {
 
     let listener = TcpListener::bind("127.0.0.1:3000").await.unwrap();
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-
-    axum::serve(listener, app).await;
+    axum::serve(listener, app).await.unwrap();
 }
 
 #[derive(Clone)]
@@ -101,13 +255,8 @@ async fn create_user_dyn(
     State(state): State<AppStateDyn>,
     Json(params): Json<UserParams>,
 ) -> Json<User> {
-    let user = User {
-        id: Uuid::new_v4(),
-        name: params.name,
-    };
-
+    let user = User { id: Uuid::new_v4(), name: params.name };
     state.user_repo.save_user(&user);
-
     Json(user)
 }
 
@@ -125,16 +274,9 @@ async fn create_user_generic<T>(
     State(state): State<AppStateGeneric<T>>,
     Json(params): Json<UserParams>,
 ) -> Json<User>
-where
-    T: UserRepo,
-{
-    let user = User {
-        id: Uuid::new_v4(),
-        name: params.name,
-    };
-
+where T: UserRepo {
+    let user = User { id: Uuid::new_v4(), name: params.name };
     state.user_repo.save_user(&user);
-
     Json(user)
 }
 
@@ -142,9 +284,7 @@ async fn get_user_generic<T>(
     State(state): State<AppStateGeneric<T>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<User>, StatusCode>
-where
-    T: UserRepo,
-{
+where T: UserRepo {
     match state.user_repo.get_user(id) {
         Some(user) => Ok(Json(user)),
         None => Err(StatusCode::NOT_FOUND),
@@ -153,7 +293,6 @@ where
 
 trait UserRepo: Send + Sync {
     fn get_user(&self, id: Uuid) -> Option<User>;
-
     fn save_user(&self, user: &User);
 }
 
@@ -166,7 +305,6 @@ impl UserRepo for InMemoryUserRepo {
     fn get_user(&self, id: Uuid) -> Option<User> {
         self.map.lock().unwrap().get(&id).cloned()
     }
-
     fn save_user(&self, user: &User) {
         self.map.lock().unwrap().insert(user.id, user.clone());
     }
@@ -180,144 +318,34 @@ cd examples
 cargo run -p example-dependency-injection
 ````
 
-dyn 版本创建用户:
+dyn 版本：
 
 ````bash
-curl -i -X POST http://127.0.0.1:3000/dyn/users \
-  -H 'content-type: application/json' \
-  -d '{"name":"Alice"}'
+curl -X POST http://127.0.0.1:3000/dyn/users \
+  -H 'content-type: application/json' -d '{"name":"Alice"}'
 ````
 
-generic 版本:
+generic 版本：
 
 ````bash
-curl -i -X POST http://127.0.0.1:3000/generic/users \
-  -H 'content-type: application/json' \
-  -d '{"name":"Bob"}'
+curl -X POST http://127.0.0.1:3000/generic/users \
+  -H 'content-type: application/json' -d '{"name":"Bob"}'
 ````
-
-两个响应都返回带 `id` 的用户 JSON。查询:
-
-````bash
-curl -i http://127.0.0.1:3000/dyn/users/<id>
-curl -i http://127.0.0.1:3000/generic/users/<id>
-````
-
-## 解读
-
-### 为什么要依赖注入
-
-不依赖注入时 handler 直接依赖 `InMemoryUserRepo`,问题是:换数据库实现时 handler 要改,测试时不好替换成 fake repo,业务逻辑和存储细节耦合。依赖注入让 handler 只依赖 `UserRepo` trait:
-
-```text
-handler → UserRepo trait → 具体实现(内存/Postgres/Redis...)
-```
-
-### `UserRepo` trait
-
-````rust
-trait UserRepo: Send + Sync {
-    fn get_user(&self, id: Uuid) -> Option<User>;
-    fn save_user(&self, user: &User);
-}
-````
-
-描述"用户仓库"必须提供的能力。`Send + Sync` 很重要——axum 并发处理请求,state 要能安全跨线程共享。
-
-`InMemoryUserRepo` 实现这个 trait,内部用 `Arc<Mutex<HashMap<Uuid, User>>>`。真实项目可以实现 `PostgresUserRepo`,只要也实现 `UserRepo`,handler 不用大改。
-
-### 方式一:trait object `Arc<dyn UserRepo>`
-
-````rust
-#[derive(Clone)]
-struct AppStateDyn {
-    user_repo: Arc<dyn UserRepo>,
-}
-````
-
-`Arc<dyn UserRepo>` 表示"一个实现了 UserRepo 的对象,具体类型运行时动态分发"。handler 只调 trait 方法,不知道具体类型:
-
-````rust
-async fn create_user_dyn(
-    State(state): State<AppStateDyn>,
-    Json(params): Json<UserParams>,
-) -> Json<User> {
-    ...
-    state.user_repo.save_user(&user);
-    ...
-}
-````
-
-优点:handler 类型简单,Router 组装直观。缺点:trait 必须 object safe,有很小的动态分发开销。
-
-### 什么是 object safe
-
-`dyn Trait` 是动态分发——编译器不知道具体类型,运行时通过虚表(vtable)找方法实现。trait 要支持这套机制必须 object safe,核心条件:
-
-- **方法不能有泛型参数**(`fn foo<T>(&self)`)。泛型方法编译时要为每个 T 生成代码,但 `dyn` 只有一份。
-- **方法不能用 `Self` 作返回类型或参数类型**(`fn clone(&self) -> Self`)。`dyn` 不知道具体类型。
-- 不能有带 `Self` 约束的关联常量/类型。
-
-`UserRepo` 没有泛型方法,不返回 `Self`,所以 object safe。反例:
-
-````rust
-trait BadRepo {
-    fn get<T: DeserializeOwned>(&self, key: &str) -> Option<T>;  // ❌ 泛型方法
-}
-````
-
-编译器会报 `this trait cannot be made into an object`。设计 trait 想用 `Arc<dyn Trait>` 时,避免泛型方法和返回 `Self`;实在需要泛型方法就用泛型注入。
-
-### 方式二:泛型 `T: UserRepo`
-
-````rust
-#[derive(Clone)]
-struct AppStateGeneric<T> {
-    user_repo: T,
-}
-
-async fn create_user_generic<T>(
-    State(state): State<AppStateGeneric<T>>,
-    Json(params): Json<UserParams>,
-) -> Json<User>
-where
-    T: UserRepo,
-{
-    ...
-}
-````
-
-Router 组装时要写 turbofish:
-
-````rust
-.route("/users", post(create_user_generic::<InMemoryUserRepo>))
-````
-
-优点:没有动态分发开销,trait 不需要 object safe。缺点:handler 多类型参数和 trait bound,Router 要写 turbofish,代码更复杂。
-
-### 两种方式怎么选
-
-| 方式 | 适合场景 | 代价 |
-| --- | --- | --- |
-| `Arc<dyn UserRepo>` | 大多数 Web API,想让代码简单 | 需要 object safe,有动态分发 |
-| `T: UserRepo` | 需要零动态分发、trait 不 object safe | 类型参数多,代码复杂 |
-
-新手建议:先用 `Arc<dyn Trait>`,等真遇到限制再考虑泛型。
 
 ## 手写任务
 
-跑通后做三个小改动:
-
-1. 给 `User` 加 `email` 字段,让创建接口接收 email。
-2. 新增 `FakeUserRepo`,让它总是返回固定用户,理解替换依赖。
-3. 只保留 `/dyn` 版本,观察代码是否更简单。
+1. 给 `User` 加 `email` 字段。
+2. 新增 `FakeUserRepo`，让它总是返回固定用户。
+3. 只保留 `/dyn` 版本，观察代码是否更简单。
 
 ## 小结
 
-- 依赖注入让 handler 依赖抽象(trait)而不是具体实现,换存储时减少 handler 改动。
-- `Arc<dyn Trait>` 简单,适合多数 Web API,但 trait 必须 object safe(无泛型方法、不返回 Self)。
-- 泛型 `T: Trait` 灵活、零动态分发,但类型参数和 Router 组装(turbofish)更复杂。
-- `State<T>` 是 axum 传递依赖的常用方式;`Send + Sync` 是 state 跨线程共享的硬性要求。
+这章分 4 步演示了依赖注入：
+
+1. **定义 trait**：`UserRepo` 描述"用户仓库"的能力，`Send + Sync` 保证跨线程。
+2. **trait object**：`Arc<dyn UserRepo>`，简单但有动态分发，trait 需 object safe。
+3. **泛型**：`T: UserRepo`，零开销但类型参数多、Router 要 turbofish。
+4. **两种方式对比**：新手先用 `Arc<dyn Trait>`，遇到限制再考虑泛型。
 
 ## 源码对照
 
