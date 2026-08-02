@@ -645,14 +645,6 @@ where
 }
 ```
 
-依赖:
-
-- `axum` 0.8.x
-- `tokio` 1.x,feature `full`
-- `serde` 1.x,feature `derive`
-- `tracing` 0.1.x
-- `tracing-subscriber` 0.3.x,feature `env-filter`
-
 ## 动手练习
 
 **1. 让 `415` 响应带上说明信息。**

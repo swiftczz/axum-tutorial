@@ -717,15 +717,6 @@ impl UserRepo for InMemoryUserRepo {
 }
 ```
 
-依赖:
-
-- `axum` 0.8.x,features `tracing`、`macros`
-- `serde` 1.x,feature `derive`
-- `tokio` 1.x,feature `full`
-- `tracing` 0.1.x
-- `tracing-subscriber` 0.3.x,feature `env-filter`
-- `uuid` 1.x,features `serde`、`v4`
-
 ## 动手练习
 
 **1. 加一个假实现,体会依赖注入的价值。**

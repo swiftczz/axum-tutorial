@@ -375,13 +375,6 @@ async fn handler_404() -> impl IntoResponse {
 }
 ```
 
-依赖:
-
-- `axum` 0.8.x
-- `tokio` 1.x,feature `full`
-- `tracing` 0.1.x
-- `tracing-subscriber` 0.3.x,feature `env-filter`
-
 ## 动手练习
 
 **1. 让 404 页面显示用户访问的路径,并记一条日志。**

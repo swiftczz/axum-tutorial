@@ -507,14 +507,6 @@ async fn accept_form(Form(input): Form<Input>) -> Html<String> {
 }
 ```
 
-依赖:
-
-- `axum` 0.8.x
-- `tokio` 1.x,feature `full`
-- `serde` 1.x,feature `derive`
-- `tracing` 0.1.x
-- `tracing-subscriber` 0.3.x,feature `env-filter`
-
 > 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,用 `tower::ServiceExt::oneshot` 在不启动服务器的情况下测试这两个 handler。测试写法见第 21 章,那里会完整讲解并补上对应的 `cargo add --dev` 依赖。
 
 ## 动手练习

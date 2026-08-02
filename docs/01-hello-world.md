@@ -328,11 +328,6 @@ async fn handler() -> Html<&'static str> {
 }
 ```
 
-依赖(通过 `cargo add axum` 和 `cargo add tokio --features full` 安装):
-
-- `axum` 0.8.x
-- `tokio` 1.x,feature `full`
-
 ## 动手练习
 
 **1. 加一条 `GET /json` 路由,返回 `{"message":"Hello, World!"}`。**

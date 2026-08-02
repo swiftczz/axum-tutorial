@@ -961,17 +961,6 @@ impl IntoResponse for ApiError {
 }
 ```
 
-依赖:
-
-- `axum` 0.8.x,feature `macros`
-- `axum-extra` 0.10.x,feature `with-rejection`
-- `serde` 1.x,feature `derive`
-- `serde_json` 1.x
-- `thiserror` 2.x
-- `tokio` 1.x,feature `full`
-- `tracing` 0.1.x
-- `tracing-subscriber` 0.3.x,feature `env-filter`
-
 ## 动手练习
 
 **1. 让 `MatchedPath` 的价值显现出来。** 把 `/custom-extractor` 改成带路径参数的路由,比如 `/custom-extractor/{id}`。

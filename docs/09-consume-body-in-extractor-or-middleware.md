@@ -482,14 +482,6 @@ where
 }
 ```
 
-依赖:
-
-- `axum` 0.8.x
-- `tokio` 1.x,feature `full`
-- `http-body-util` 0.1.x
-- `tracing` 0.1.x
-- `tracing-subscriber` 0.3.x,feature `env-filter`
-
 ## 动手练习
 
 **1. 给中间件加上大小限制,超过 100 字节直接拒绝。**

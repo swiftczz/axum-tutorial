@@ -345,11 +345,6 @@ fn do_some_computing_task() {
 }
 ```
 
-依赖:
-
-- `axum` 0.8.x
-- `tokio` 1.x,feature `full`
-
 > 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,两个测试分别断言 `GET` 返回 `header from GET` 加完整 body、`HEAD` 返回 `header from HEAD` 且 body 为空。测试写法见第 21 章。
 
 ## 动手练习

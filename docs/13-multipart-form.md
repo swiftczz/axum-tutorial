@@ -465,24 +465,6 @@ rm /tmp/huge.bin /tmp/big.bin /tmp/a.txt /tmp/b.bin
 
 这就是前置知识强调"不能只做第一步"的原因。改回来。
 
-## 代价与边界
-
-这个示例是官方示例里隐患最集中的一个,照抄进生产环境会出事。逐条说。
-
-**四个 `.unwrap()` 会 panic。** 步骤 2 已经复现过:表单里有非文件字段时 `file_name()` 返回 `None`,直接 panic。`content_type()` 同理。`next_field()` 的 `unwrap` 更危险——客户端中途断连、发送格式非法的 multipart 都会触发。**正确做法是用 `Option`/`Result` 的组合子处理,或者返回 `Result<_, StatusCode>` 让错误变成响应**,见练习题 1。
-
-**`field.bytes()` 把整个文件读进内存。** 250MB 的上限意味着单个请求最多吃 250MB 内存;10 个并发上传就是 2.5GB。这个数字必须结合你的服务器内存和预期并发量来定,不能照抄。**大文件上传的正确做法是流式写盘**,见第 40 章 stream-to-file。
-
-**`file_name()` 的值完全由客户端控制,直接拿它当路径是严重漏洞。** 攻击者可以传 `filename="../../etc/passwd"` 或 `filename="../../../var/www/shell.php"`,如果你写 `File::create(file_name)`,文件就落到了任意位置。这叫**路径穿越**(path traversal)。防御办法:自己生成文件名(UUID 之类),只把原始文件名当作元数据存起来;或者用 `std::path::Path::file_name()` 剥掉目录部分并严格校验。
-
-**`content_type()` 同样不可信。** 它来自客户端声明的 `Content-Type`,和文件实际内容毫无关系。要判断真实类型得读文件头的**魔数**(magic number),比如 PNG 以 `\x89PNG` 开头。靠客户端声明的类型做安全决策(比如"是图片就直接展示")会被绕过。
-
-**没有限制字段数量。** 攻击者可以发送一个包含十万个微小字段的 multipart 请求,每个字段都合法,但循环十万次也够呛。真实服务应该计数并设上限。
-
-**`250 * 1024 * 1024` 这个数字要按场景改。** 头像上传给 5MB 足矣,视频上传可能需要更大——但那种量级更应该走对象存储的直传方案,而不是过你的服务器。
-
-一句话总结:**这个示例演示的是 `Multipart` API 怎么用,不是文件上传该怎么做。** 真实的上传功能至少还需要:错误处理、流式落盘、文件名净化、类型校验、病毒扫描(视场景)、配额限制。
-
 ## 完整代码
 
 `src/main.rs`:
@@ -561,13 +543,23 @@ async fn accept_form(mut multipart: Multipart) {
 }
 ```
 
-依赖:
+## 代价与边界
 
-- `axum` 0.8.x,feature `multipart`
-- `tokio` 1.x,feature `full`
-- `tower-http` 0.6.x,features `limit`、`trace`
-- `tracing` 0.1.x
-- `tracing-subscriber` 0.3.x,feature `env-filter`
+这个示例是官方示例里隐患最集中的一个,照抄进生产环境会出事。逐条说。
+
+**四个 `.unwrap()` 会 panic。** 步骤 2 已经复现过:表单里有非文件字段时 `file_name()` 返回 `None`,直接 panic。`content_type()` 同理。`next_field()` 的 `unwrap` 更危险——客户端中途断连、发送格式非法的 multipart 都会触发。**正确做法是用 `Option`/`Result` 的组合子处理,或者返回 `Result<_, StatusCode>` 让错误变成响应**,见练习题 1。
+
+**`field.bytes()` 把整个文件读进内存。** 250MB 的上限意味着单个请求最多吃 250MB 内存;10 个并发上传就是 2.5GB。这个数字必须结合你的服务器内存和预期并发量来定,不能照抄。**大文件上传的正确做法是流式写盘**,见第 40 章 stream-to-file。
+
+**`file_name()` 的值完全由客户端控制,直接拿它当路径是严重漏洞。** 攻击者可以传 `filename="../../etc/passwd"` 或 `filename="../../../var/www/shell.php"`,如果你写 `File::create(file_name)`,文件就落到了任意位置。这叫**路径穿越**(path traversal)。防御办法:自己生成文件名(UUID 之类),只把原始文件名当作元数据存起来;或者用 `std::path::Path::file_name()` 剥掉目录部分并严格校验。
+
+**`content_type()` 同样不可信。** 它来自客户端声明的 `Content-Type`,和文件实际内容毫无关系。要判断真实类型得读文件头的**魔数**(magic number),比如 PNG 以 `\x89PNG` 开头。靠客户端声明的类型做安全决策(比如"是图片就直接展示")会被绕过。
+
+**没有限制字段数量。** 攻击者可以发送一个包含十万个微小字段的 multipart 请求,每个字段都合法,但循环十万次也够呛。真实服务应该计数并设上限。
+
+**`250 * 1024 * 1024` 这个数字要按场景改。** 头像上传给 5MB 足矣,视频上传可能需要更大——但那种量级更应该走对象存储的直传方案,而不是过你的服务器。
+
+一句话总结:**这个示例演示的是 `Multipart` API 怎么用,不是文件上传该怎么做。** 真实的上传功能至少还需要:错误处理、流式落盘、文件名净化、类型校验、病毒扫描(视场景)、配额限制。
 
 ## 动手练习
 

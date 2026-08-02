@@ -776,18 +776,6 @@ DEBUG request{method=POST uri=/users matched_path="/users"}: tower_http::trace::
 
 改回来。
 
-## 代价与边界
-
-**这套做法适合中小型应用。** 单个 `AppError` enum 收拢全部错误,在几十个错误来源以内很好用。项目再大就会出现问题:enum 变得臃肿、模块之间被迫共享一个错误类型、修改它会触发全项目重编译。那时的做法通常是按模块分层定义错误,再逐层 `From` 转换。
-
-**`?` 的自动转换会丢失上下文。** `Timestamp::now()?` 只知道"时间库出错了",不知道"在为用户 zhangsan 创建记录时时间库出错了"。真实项目通常需要在传播过程中附加上下文,这正是 `anyhow` 擅长的事——[第 15 章](15-anyhow-error-response.md)会讲。
-
-**响应扩展的做法有个隐含前提:错误必须真的变成响应。** 如果某个错误在中途被吞掉(比如被另一个中间件捕获后替换成别的响应),扩展也会跟着丢失,日志就不会记录。本章的链路很短所以没问题,链路复杂时要留意。
-
-**`.on_failure(())` 关掉了框架自带的 5xx 日志,这意味着"记录 5xx"的责任完全落在你自己的中间件上。** 如果某个 500 响应不是由 `AppError` 产生的(比如某处直接返回了 `StatusCode::INTERNAL_SERVER_ERROR`,或者 handler panic 了),它就不会被任何人记录。这是一个真实的观测盲区。稳妥的做法是在中间件里额外检查 `response.status().is_server_error()`,兜住所有 5xx。
-
-**`state.users.lock().unwrap()` 会 panic。** `Mutex` 中毒(持锁线程 panic)后所有 `lock()` 都返回 `Err`。示例直接 `unwrap`,细节见第 22 章。
-
 ## 完整代码
 
 `src/main.rs`:
@@ -1026,14 +1014,17 @@ mod time_library {
 }
 ```
 
-依赖:
+## 代价与边界
 
-- `axum` 0.8.x,feature `macros`
-- `serde` 1.x,feature `derive`
-- `tokio` 1.x,feature `full`
-- `tower-http` 0.6.x,feature `trace`
-- `tracing` 0.1.x
-- `tracing-subscriber` 0.3.x,feature `env-filter`
+**这套做法适合中小型应用。** 单个 `AppError` enum 收拢全部错误,在几十个错误来源以内很好用。项目再大就会出现问题:enum 变得臃肿、模块之间被迫共享一个错误类型、修改它会触发全项目重编译。那时的做法通常是按模块分层定义错误,再逐层 `From` 转换。
+
+**`?` 的自动转换会丢失上下文。** `Timestamp::now()?` 只知道"时间库出错了",不知道"在为用户 zhangsan 创建记录时时间库出错了"。真实项目通常需要在传播过程中附加上下文,这正是 `anyhow` 擅长的事——[第 15 章](15-anyhow-error-response.md)会讲。
+
+**响应扩展的做法有个隐含前提:错误必须真的变成响应。** 如果某个错误在中途被吞掉(比如被另一个中间件捕获后替换成别的响应),扩展也会跟着丢失,日志就不会记录。本章的链路很短所以没问题,链路复杂时要留意。
+
+**`.on_failure(())` 关掉了框架自带的 5xx 日志,这意味着"记录 5xx"的责任完全落在你自己的中间件上。** 如果某个 500 响应不是由 `AppError` 产生的(比如某处直接返回了 `StatusCode::INTERNAL_SERVER_ERROR`,或者 handler panic 了),它就不会被任何人记录。这是一个真实的观测盲区。稳妥的做法是在中间件里额外检查 `response.status().is_server_error()`,兜住所有 5xx。
+
+**`state.users.lock().unwrap()` 会 panic。** `Mutex` 中毒(持锁线程 panic)后所有 `lock()` 都返回 `Err`。示例直接 `unwrap`,细节见第 22 章。
 
 ## 动手练习
 

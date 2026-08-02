@@ -459,20 +459,6 @@ access-control-allow-headers: content-type
 
 把步骤 3 的临时改动全部撤销,回到官方示例的形态。
 
-## 代价与边界
-
-**`allow_origin(Any)` 在生产环境是危险的。** 它等于宣布"任何网站都可以读我的响应"。对完全公开的只读 API(比如公开的天气数据)可以接受;只要接口涉及用户身份或私有数据,就必须用白名单。
-
-**`allow_credentials(true)` 要格外谨慎。** 它允许跨源请求携带 cookie。开了它就意味着别的源可以用**用户已登录的身份**调你的接口——这正是前置知识里那个网银场景。规范禁止它和 `Any` 共存,`tower-http` 会 panic 提醒。真要用,必须配合严格的源白名单。
-
-**CORS 不能替代认证和 CSRF 防护。** 前置知识强调过:CORS 拦的是"读取响应",不是"执行操作"。一个跨源 `POST /delete-account` 即使读不到响应,删除动作也已经发生了。防这类攻击要靠 CSRF token 或 `SameSite` cookie 属性。**把 CORS 当成安全边界是常见的误解。**
-
-**别在服务端"手动"加 CORS 头部。** 常见的错误做法是在每个 handler 里手写 `Access-Control-Allow-Origin: *`。这样做会漏掉预检处理(`OPTIONS` 请求没人应答)、漏掉 `Vary: Origin`(缓存投毒)、也漏掉各种边界情况。用 `CorsLayer`。
-
-**开发环境放宽、生产环境收紧,配置要能区分。** 常见做法是从环境变量读允许的源列表,本地开发时包含 `http://localhost:5173`(Vite 默认端口)之类,生产只留正式域名。
-
-**预检有性能成本。** 每个非简单请求都多一次往返。用 `max_age` 让浏览器缓存预检结果能显著改善,但注意浏览器对这个值有上限(Chrome 是 2 小时),设再大也没用。
-
 ## 完整代码
 
 `src/main.rs`:
@@ -535,11 +521,19 @@ async fn json() -> impl IntoResponse {
 }
 ```
 
-依赖:
+## 代价与边界
 
-- `axum` 0.8.x
-- `tokio` 1.x,feature `full`
-- `tower-http` 0.6.x,feature `cors`
+**`allow_origin(Any)` 在生产环境是危险的。** 它等于宣布"任何网站都可以读我的响应"。对完全公开的只读 API(比如公开的天气数据)可以接受;只要接口涉及用户身份或私有数据,就必须用白名单。
+
+**`allow_credentials(true)` 要格外谨慎。** 它允许跨源请求携带 cookie。开了它就意味着别的源可以用**用户已登录的身份**调你的接口——这正是前置知识里那个网银场景。规范禁止它和 `Any` 共存,`tower-http` 会 panic 提醒。真要用,必须配合严格的源白名单。
+
+**CORS 不能替代认证和 CSRF 防护。** 前置知识强调过:CORS 拦的是"读取响应",不是"执行操作"。一个跨源 `POST /delete-account` 即使读不到响应,删除动作也已经发生了。防这类攻击要靠 CSRF token 或 `SameSite` cookie 属性。**把 CORS 当成安全边界是常见的误解。**
+
+**别在服务端"手动"加 CORS 头部。** 常见的错误做法是在每个 handler 里手写 `Access-Control-Allow-Origin: *`。这样做会漏掉预检处理(`OPTIONS` 请求没人应答)、漏掉 `Vary: Origin`(缓存投毒)、也漏掉各种边界情况。用 `CorsLayer`。
+
+**开发环境放宽、生产环境收紧,配置要能区分。** 常见做法是从环境变量读允许的源列表,本地开发时包含 `http://localhost:5173`(Vite 默认端口)之类,生产只留正式域名。
+
+**预检有性能成本。** 每个非简单请求都多一次往返。用 `max_age` 让浏览器缓存预检结果能显著改善,但注意浏览器对这个值有上限(Chrome 是 2 小时),设再大也没用。
 
 ## 动手练习
 

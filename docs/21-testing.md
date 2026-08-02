@@ -637,20 +637,6 @@ test tests::with_into_make_service_with_connect_info ... FAILED
 
 **`500`** —— `ConnectInfo` 提取器找不到连接信息,提取失败。这和步骤 1 里 curl 那条路由得到 500 是同一个原因。恢复那一行。
 
-## 代价与边界
-
-**内存测试测不到 HTTP 协议层。** `oneshot` 直接构造 `Request` 对象,跳过了报文解析。所以这些测试**不会发现**协议层面的问题:头部编码、分块传输、超大 URL、畸形报文。这些通常不是你的代码负责的(hyper 管),但如果你写了操作原始字节的中间件,就需要真实服务器测试。
-
-**测试里的日志会打乱输出。** `TraceLayer` 在测试中同样工作,而 `tracing_subscriber` 的 `.init()` [第 17 章](17-tracing-aka-logging.md#代价与边界)说过全局只能调一次——多个测试各自初始化会 panic。本章示例没在测试里初始化订阅器,所以日志静默丢弃了。需要看日志时用 `tracing_subscriber::fmt().with_test_writer().try_init()`(`try_init` 失败返回 `Err` 而不 panic)。
-
-**共享状态会让测试互相影响。** 本章的 `app()` 没有状态。一旦引入 `State`(比如[第 16 章](16-dependency-injection.md)那个 `InMemoryUserRepo`),就要注意:如果 `app()` 内部创建状态,每个测试拿到的是独立实例(好);如果状态是全局的或从外部传入同一份,测试之间就会串数据(坏)。**并行执行会让这类问题表现得随机而难查。**
-
-**`b"Hello, World!"` 这种字节断言的失败信息很难读。** 步骤 2 演示过。实际项目建议先转成字符串再比较。
-
-**没有测中间件的顺序。** 本章测试能验证"中间件生效了",但验证不了[第 19 章](19-request-id.md)那种"多个中间件的顺序对不对"。那需要构造更精细的断言,比如检查特定响应头是否存在。
-
-**测试替身可能掩盖真实问题。** `MockConnectInfo` 让测试通过了,但它验证不了"生产环境真的调用了 `into_make_service_with_connect_info`"——本章示例的 `main` 其实就没调用,那条路由在生产环境是坏的(步骤 1 里 curl 到的 500)。**测试绿了不等于功能可用**,这是个很好的反面案例。
-
 ## 完整代码
 
 `src/main.rs`:
@@ -843,21 +829,19 @@ mod tests {
 }
 ```
 
-依赖:
+## 代价与边界
 
-- `axum` 0.8.x
-- `tokio` 1.x,feature `full`
-- `tower-http` 0.6.x,feature `trace`
-- `tracing` 0.1.x
-- `tracing-subscriber` 0.3.x,feature `env-filter`
-- `serde_json` 1.x
-- `mime` 0.3.x
-- `http-body-util` 0.1.x
-- `hyper-util` 0.1.x,features `client`、`http1`、`client-legacy`
+**内存测试测不到 HTTP 协议层。** `oneshot` 直接构造 `Request` 对象,跳过了报文解析。所以这些测试**不会发现**协议层面的问题:头部编码、分块传输、超大 URL、畸形报文。这些通常不是你的代码负责的(hyper 管),但如果你写了操作原始字节的中间件,就需要真实服务器测试。
 
-开发依赖:
+**测试里的日志会打乱输出。** `TraceLayer` 在测试中同样工作,而 `tracing_subscriber` 的 `.init()` [第 17 章](17-tracing-aka-logging.md#代价与边界)说过全局只能调一次——多个测试各自初始化会 panic。本章示例没在测试里初始化订阅器,所以日志静默丢弃了。需要看日志时用 `tracing_subscriber::fmt().with_test_writer().try_init()`(`try_init` 失败返回 `Err` 而不 panic)。
 
-- `tower` 0.5.x,feature `util`(仅测试用)
+**共享状态会让测试互相影响。** 本章的 `app()` 没有状态。一旦引入 `State`(比如[第 16 章](16-dependency-injection.md)那个 `InMemoryUserRepo`),就要注意:如果 `app()` 内部创建状态,每个测试拿到的是独立实例(好);如果状态是全局的或从外部传入同一份,测试之间就会串数据(坏)。**并行执行会让这类问题表现得随机而难查。**
+
+**`b"Hello, World!"` 这种字节断言的失败信息很难读。** 步骤 2 演示过。实际项目建议先转成字符串再比较。
+
+**没有测中间件的顺序。** 本章测试能验证"中间件生效了",但验证不了[第 19 章](19-request-id.md)那种"多个中间件的顺序对不对"。那需要构造更精细的断言,比如检查特定响应头是否存在。
+
+**测试替身可能掩盖真实问题。** `MockConnectInfo` 让测试通过了,但它验证不了"生产环境真的调用了 `into_make_service_with_connect_info`"——本章示例的 `main` 其实就没调用,那条路由在生产环境是坏的(步骤 1 里 curl 到的 500)。**测试绿了不等于功能可用**,这是个很好的反面案例。
 
 ## 回头补上前面章节的测试
 

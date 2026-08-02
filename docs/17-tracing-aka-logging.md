@@ -574,18 +574,6 @@ RUST_LOG=tracing_aka_logging=debug,tower_http=debug cargo run
 
 把临时加的两条路由删掉,回到官方示例的形态。
 
-## 代价与边界
-
-**`on_body_chunk` 里打日志在流式场景会失控。** 上面提过,SSE 或大文件下载会触发成千上万次。本章示例把它接上是为了演示,**生产环境请谨慎**——要么删掉这个回调,要么只在里面累加计数器。
-
-**日志本身是有成本的。** 每条日志都要格式化、写 IO。`debug` 级别在高 QPS 服务上产生的日志量可能超过业务流量本身,还会因为 IO 阻塞拖慢响应。生产环境通常设 `info` 或 `warn`,只在排查问题时临时调高。
-
-**span 会带来内存开销。** 每个请求一个 span,字段值要保存到 span 结束。字段里放大对象(比如整个请求体)会显著增加内存占用。
-
-**日志里不要放敏感信息。** 这是最容易犯的错:span 字段里放了完整 URI,而 URI 的查询字符串里可能有 token;记录请求头时可能连 `Authorization` 和 cookie 一起记了。日志通常会被转发到集中式系统、长期保留、被很多人访问——**放进去的东西等于公开**。真实项目应该有明确的脱敏规则。
-
-**`.init()` 全局只能调一次。** 在测试里尤其容易踩:多个测试各自初始化订阅器会 panic。测试中用 `tracing_subscriber::fmt().with_test_writer().try_init()`(`try_init` 失败返回 `Err` 而非 panic)。
-
 ## 完整代码
 
 `src/main.rs`:
@@ -683,13 +671,17 @@ async fn handler() -> Html<&'static str> {
 }
 ```
 
-依赖:
+## 代价与边界
 
-- `axum` 0.8.x,feature `tracing`
-- `tokio` 1.x,feature `full`
-- `tower-http` 0.6.x,feature `trace`
-- `tracing` 0.1.x
-- `tracing-subscriber` 0.3.x,feature `env-filter`
+**`on_body_chunk` 里打日志在流式场景会失控。** 上面提过,SSE 或大文件下载会触发成千上万次。本章示例把它接上是为了演示,**生产环境请谨慎**——要么删掉这个回调,要么只在里面累加计数器。
+
+**日志本身是有成本的。** 每条日志都要格式化、写 IO。`debug` 级别在高 QPS 服务上产生的日志量可能超过业务流量本身,还会因为 IO 阻塞拖慢响应。生产环境通常设 `info` 或 `warn`,只在排查问题时临时调高。
+
+**span 会带来内存开销。** 每个请求一个 span,字段值要保存到 span 结束。字段里放大对象(比如整个请求体)会显著增加内存占用。
+
+**日志里不要放敏感信息。** 这是最容易犯的错:span 字段里放了完整 URI,而 URI 的查询字符串里可能有 token;记录请求头时可能连 `Authorization` 和 cookie 一起记了。日志通常会被转发到集中式系统、长期保留、被很多人访问——**放进去的东西等于公开**。真实项目应该有明确的脱敏规则。
+
+**`.init()` 全局只能调一次。** 在测试里尤其容易踩:多个测试各自初始化订阅器会 panic。测试中用 `tracing_subscriber::fmt().with_test_writer().try_init()`(`try_init` 失败返回 `Err` 而非 panic)。
 
 ## 动手练习
 

@@ -666,12 +666,6 @@ async fn handler_about(State(state): State<Arc<AppState>>) -> Result<Html<String
 }
 ```
 
-依赖:
-
-- `axum` 0.8.x
-- `tokio` 1.x,feature `full`
-- `minijinja` 2.x
-
 ## 两种模板方案的对照
 
 学完两章,可以把 askama 和 minijinja 摆在一起看:

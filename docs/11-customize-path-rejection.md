@@ -623,14 +623,6 @@ struct PathError {
 }
 ```
 
-依赖:
-
-- `axum` 0.8.x
-- `serde` 1.x,feature `derive`
-- `tokio` 1.x,feature `full`
-- `tracing` 0.1.x
-- `tracing-subscriber` 0.3.x,feature `env-filter`
-
 ## 动手练习
 
 **1. 把 `WrongNumberOfParameters` 改成返回 `500`。**

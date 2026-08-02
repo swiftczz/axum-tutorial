@@ -39,54 +39,54 @@
 
 ### 状态与数据库
 
-- 第 22 章 key-value-store:内存 KV 存储
-- 第 23 章 todos:完整 CRUD 应用
-- 第 24 章 sqlx-postgres:PostgreSQL (sqlx)
-- 第 25 章 tokio-postgres:PostgreSQL (tokio-postgres)
-- 第 26 章 diesel-postgres:PostgreSQL (diesel)
-- 第 27 章 diesel-async-postgres:PostgreSQL (diesel-async)
-- 第 28 章 tokio-redis:Redis
-- 第 29 章 mongodb:MongoDB
+- [第 22 章 key-value-store:共享可变状态](22-key-value-store.md)
+- [第 23 章 todos:一个完整的 REST CRUD](23-todos.md)
+- [第 24 章 sqlx-postgres:连接池与数据库提取器](24-sqlx-postgres.md)
+- [第 25 章 tokio-postgres:换一套驱动与连接池](25-tokio-postgres.md)
+- [第 26 章 diesel-postgres:ORM 与同步库的异步困境](26-diesel-postgres.md)
+- [第 27 章 diesel-async-postgres:让 ORM 原生异步](27-diesel-async-postgres.md)
+- [第 28 章 tokio-redis:内存存储与无类型的值](28-tokio-redis.md)
+- [第 29 章 mongodb:文档数据库与完整 CRUD](29-mongodb.md)
 
 ### 认证与安全
 
-- 第 30 章 jwt:JSON Web Token 认证
-- 第 31 章 oauth:OAuth 授权
-- 第 32 章 tls-rustls:TLS (rustls)
+- [第 30 章 jwt:无状态认证](30-jwt.md)
+- [第 31 章 oauth:把认证委托给第三方](31-oauth.md)
+- [第 32 章 tls-rustls:给服务启用 HTTPS](32-tls-rustls.md)
 
 ### 实时通信
 
-- 第 33 章 sse:Server-Sent Events
-- 第 34 章 websockets:WebSocket
-- 第 35 章 testing-websockets:测试 WebSocket
-- 第 36 章 websockets-http2:WebSocket over HTTP/2
-- 第 37 章 chat:聊天室(综合项目)
+- [第 33 章 sse:服务端主动推送](33-sse.md)
+- [第 34 章 websockets:双向通信](34-websockets.md)
+- [第 35 章 testing-websockets:两种测法](35-testing-websockets.md)
+- [第 36 章 websockets-http2:HTTP/2 上的 WebSocket](36-websockets-http2.md)
+- [第 37 章 chat:聊天室(综合项目)](37-chat.md)
 
 ### 内容分发与代理
 
-- 第 38 章 static-file-server:静态文件服务
-- 第 39 章 compression:响应压缩
-- 第 40 章 stream-to-file:流式写文件
-- 第 41 章 reqwest-response:转发 reqwest 响应
-- 第 42 章 http-proxy:HTTP 代理
-- 第 43 章 reverse-proxy:反向代理
-- 第 44 章 serve-with-hyper:直接用 hyper 驱动
+- [第 38 章 static-file-server:静态文件服务](38-static-file-server.md)
+- [第 39 章 compression:请求与响应压缩](39-compression.md)
+- [第 40 章 stream-to-file:流式写盘](40-stream-to-file.md)
+- [第 41 章 reqwest-response:把别人的响应转发出去](41-reqwest-response.md)
+- [第 42 章 http-proxy:CONNECT 隧道与连接升级](42-http-proxy.md)
+- [第 43 章 reverse-proxy:改写请求再转发](43-reverse-proxy.md)
+- [第 44 章 serve-with-hyper:把 axum::serve 拆开](44-serve-with-hyper.md)
 
 ### 生产部署
 
-- 第 45 章 graceful-shutdown:优雅停机
-- 第 46 章 tls-graceful-shutdown:TLS + 优雅停机
-- 第 47 章 prometheus-metrics:Prometheus 指标
-- 第 48 章 versioning:API 版本管理
-- 第 49 章 auto-reload:开发热重载
+- [第 45 章 graceful-shutdown:让进程体面地退出](45-graceful-shutdown.md)
+- [第 46 章 tls-graceful-shutdown:另一套停机 API](46-tls-graceful-shutdown.md)
+- [第 47 章 prometheus-metrics:指标采集与基数陷阱](47-prometheus-metrics.md)
+- [第 48 章 versioning:API 版本与一个静默的兼容性事故](48-versioning.md)
+- [第 49 章 auto-reload:改代码自动重启,还不断连](49-auto-reload.md)
 
 ### 专题
 
-- 第 50 章 low-level-rustls:底层 TLS (rustls)
-- 第 51 章 low-level-native-tls:底层 TLS (native-tls)
-- 第 52 章 low-level-openssl:底层 TLS (openssl)
-- 第 53 章 unix-domain-socket:Unix 域套接字
-- 第 54 章 simple-router-wasm:WASM 路由
+- [第 50 章 low-level-rustls:自己握手,换来控制权](50-low-level-rustls.md)
+- [第 51 章 low-level-native-tls:用系统自带的 TLS](51-low-level-native-tls.md)
+- [第 52 章 low-level-openssl:握手拆到最细](52-low-level-openssl.md)
+- [第 53 章 unix-domain-socket:不走网络的 HTTP](53-unix-domain-socket.md)
+- [第 54 章 simple-router-wasm:没有服务器的 axum](54-simple-router-wasm.md)
 
 ## 环境要求
 

@@ -430,24 +430,6 @@ async fn handler(Form(input): Form<NameInput>) -> Html<String> {
 
 这说明规则本身不会自动生效——`#[validate(...)]` 只是生成了 `validate()` 方法,得有人调。把提取器换成 `ValidatedForm` 就是"让类型系统替你记得调用它"。改回 `ValidatedForm`。
 
-## 这个模式的边界
-
-**校验器不认识业务上下文。** `validator` 能检查格式、长度、范围,但不能检查"这个用户名是否已被注册"、"这个订单是否属于当前用户"、"库存是否充足"——这些需要查数据库或读取应用状态,属于 handler 里的业务逻辑,不该塞进提取器。
-
-分界线大致是:**只看输入本身就能判断的,归校验器;需要外部信息才能判断的,归业务层。**
-
-**`custom` 规则可以调函数,但仍然是同步的、无状态的。** `validator` 的自定义校验函数签名是 `fn(&T) -> Result<(), ValidationError>`,拿不到数据库连接、不能 `await`。想在校验里查库,得自己在提取器里做——但那样提取器就依赖 `State` 了,复杂度会上一个台阶。
-
-**错误格式是纯文本,不适合 API。** 本章的 `IntoResponse` 输出的是一行文本。真实 API 通常需要结构化的字段级错误:
-
-```json
-{"errors": {"name": ["Can not be empty"], "email": ["Invalid email format"]}}
-```
-
-`ValidationErrors` 本身实现了 `Serialize`,可以直接 `Json(errors)` 返回,信息比压成一行完整得多。练习题 2 会做这件事。
-
-**状态码的选择有争议。** 本章两种失败都返回 `400`。也有观点认为语义上应该区分:JSON/表单语法错误用 `400`(请求格式就不对),语义校验失败用 `422 Unprocessable Entity`(格式对但内容不合要求)。[第 03 章](03-form.md#步骤-3观察提取失败时的行为)见过 axum 内置提取器就是这么分的——反序列化失败给 `422`。两种做法都有人用,团队内统一即可。
-
 ## 完整代码
 
 `src/main.rs`:
@@ -540,17 +522,25 @@ impl IntoResponse for ServerError {
 }
 ```
 
-依赖:
-
-- `axum` 0.8.x
-- `tokio` 1.x,feature `full`
-- `serde` 1.x,feature `derive`
-- `validator` 0.20.x,feature `derive`
-- `thiserror` 2.x
-- `tracing` 0.1.x
-- `tracing-subscriber` 0.3.x,feature `env-filter`
-
 > 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,四个测试分别覆盖缺字段、空值、单字符、合法值四种输入。测试写法见第 21 章。
+
+## 这个模式的边界
+
+**校验器不认识业务上下文。** `validator` 能检查格式、长度、范围,但不能检查"这个用户名是否已被注册"、"这个订单是否属于当前用户"、"库存是否充足"——这些需要查数据库或读取应用状态,属于 handler 里的业务逻辑,不该塞进提取器。
+
+分界线大致是:**只看输入本身就能判断的,归校验器;需要外部信息才能判断的,归业务层。**
+
+**`custom` 规则可以调函数,但仍然是同步的、无状态的。** `validator` 的自定义校验函数签名是 `fn(&T) -> Result<(), ValidationError>`,拿不到数据库连接、不能 `await`。想在校验里查库,得自己在提取器里做——但那样提取器就依赖 `State` 了,复杂度会上一个台阶。
+
+**错误格式是纯文本,不适合 API。** 本章的 `IntoResponse` 输出的是一行文本。真实 API 通常需要结构化的字段级错误:
+
+```json
+{"errors": {"name": ["Can not be empty"], "email": ["Invalid email format"]}}
+```
+
+`ValidationErrors` 本身实现了 `Serialize`,可以直接 `Json(errors)` 返回,信息比压成一行完整得多。练习题 2 会做这件事。
+
+**状态码的选择有争议。** 本章两种失败都返回 `400`。也有观点认为语义上应该区分:JSON/表单语法错误用 `400`(请求格式就不对),语义校验失败用 `422 Unprocessable Entity`(格式对但内容不合要求)。[第 03 章](03-form.md#步骤-3观察提取失败时的行为)见过 axum 内置提取器就是这么分的——反序列化失败给 `422`。两种做法都有人用,团队内统一即可。
 
 ## 动手练习
 

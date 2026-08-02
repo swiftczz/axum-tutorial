@@ -489,7 +489,6 @@ fn build_response(status: &str, content_type: &str, body: &str) -> String {
 }
 ```
 
-本章无第三方依赖,`Cargo.toml` 保持 `cargo new` 生成的原样。
 
 ## 这个服务器还差什么
 

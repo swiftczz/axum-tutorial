@@ -508,14 +508,6 @@ where
 }
 ```
 
-依赖:
-
-- `axum` 0.8.x
-- `tokio` 1.x,feature `full`
-- `askama` 0.15.x,关闭默认 feature,开启 `std` 和 `derive`
-- `tracing` 0.1.x
-- `tracing-subscriber` 0.3.x,feature `env-filter`
-
 > 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,用 `oneshot` 断言 `/greet/Foo` 返回 `<h1>Hello, Foo!</h1>`。测试写法见第 21 章。
 
 ## 动手练习
