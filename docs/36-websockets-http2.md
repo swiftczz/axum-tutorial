@@ -727,7 +727,7 @@ async fn ws_handler(
 
 **没有校验 Origin。** [第 34 章](34-websockets.md#代价与边界)强调过 Cross-Site WebSocket Hijacking —— WebSocket 不受同源策略约束,必须自己检查 `Origin`。本章同样没做。
 
-**没有认证、没有限流、没有消息大小限制。** 和第 34 章相同的一组问题。
+**没有认证、没有限流、没有消息大小限制。** 和[第 34 章](34-websockets.md)相同的一组问题。
 
 **没有用户标识。** 所有消息都是裸文本,看不出谁发的。[第 37 章](37-chat.md)会解决这个。
 

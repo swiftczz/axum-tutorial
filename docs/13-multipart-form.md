@@ -292,7 +292,7 @@ async fn accept_form(mut multipart: Multipart) {
 
 **示例里四个 `.unwrap()` 全是隐患。** 只要表单里混进一个普通文本字段(比如加个 `<input type="text" name="title">`),`file_name()` 就返回 `None`,`unwrap()` 直接 panic。步骤 3 之后的"代价与边界"会详细说这件事。
 
-**`field.bytes().await` 把这个字段的内容全部读进内存。** 对 250MB 的文件就是 250MB 内存。真实的文件上传应该边读边写磁盘,那是第 40 章 stream-to-file 的内容。
+**`field.bytes().await` 把这个字段的内容全部读进内存。** 对 250MB 的文件就是 250MB 内存。真实的文件上传应该边读边写磁盘,那是[第 40 章](40-stream-to-file.md) stream-to-file 的内容。
 
 **handler 返回 `()`**,也就是 `200` + 空 body([第 01 章](01-hello-world.md#intoresponse返回值如何变成-http-响应)那张表)。示例只关心终端输出。
 
@@ -549,7 +549,7 @@ async fn accept_form(mut multipart: Multipart) {
 
 **四个 `.unwrap()` 会 panic。** 步骤 2 已经复现过:表单里有非文件字段时 `file_name()` 返回 `None`,直接 panic。`content_type()` 同理。`next_field()` 的 `unwrap` 更危险——客户端中途断连、发送格式非法的 multipart 都会触发。**正确做法是用 `Option`/`Result` 的组合子处理,或者返回 `Result<_, StatusCode>` 让错误变成响应**,见练习题 1。
 
-**`field.bytes()` 把整个文件读进内存。** 250MB 的上限意味着单个请求最多吃 250MB 内存;10 个并发上传就是 2.5GB。这个数字必须结合你的服务器内存和预期并发量来定,不能照抄。**大文件上传的正确做法是流式写盘**,见第 40 章 stream-to-file。
+**`field.bytes()` 把整个文件读进内存。** 250MB 的上限意味着单个请求最多吃 250MB 内存;10 个并发上传就是 2.5GB。这个数字必须结合你的服务器内存和预期并发量来定,不能照抄。**大文件上传的正确做法是流式写盘**,见[第 40 章](40-stream-to-file.md) stream-to-file。
 
 **`file_name()` 的值完全由客户端控制,直接拿它当路径是严重漏洞。** 攻击者可以传 `filename="../../etc/passwd"` 或 `filename="../../../var/www/shell.php"`,如果你写 `File::create(file_name)`,文件就落到了任意位置。这叫**路径穿越**(path traversal)。防御办法:自己生成文件名(UUID 之类),只把原始文件名当作元数据存起来;或者用 `std::path::Path::file_name()` 剥掉目录部分并严格校验。
 

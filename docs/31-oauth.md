@@ -110,11 +110,11 @@ http://你的服务/auth/authorized?code=攻击者的授权码
 
 本章和[第 30 章](30-jwt.md)是两种认证方案的完整对照。
 
-**第 30 章(JWT):** 服务端不存任何东西,用户身份编码在 token 里,靠签名验真伪。
+**[第 30 章](30-jwt.md)(JWT):** 服务端不存任何东西,用户身份编码在 token 里,靠签名验真伪。
 
 **本章(session):** 服务端存一张表 `session_id → 用户数据`,客户端只拿一个 `session_id`(放在 cookie 里)。
 
-| | JWT(第 30 章) | Session(本章) |
+| | JWT([第 30 章](30-jwt.md)) | Session(本章) |
 |---|---|---|
 | 服务端存储 | 无 | **需要**(内存/Redis/数据库) |
 | 客户端拿到的 | 完整身份信息 | 只是一个 ID |
@@ -415,7 +415,7 @@ where
 
 好处是**编译期保证配置完整**——没设置 `auth_uri` 就调用 `authorize_url()` 会编译失败,而不是运行时报错。代价是类型极长,必须起别名。
 
-**`AppError` 这段和[第 15 章](15-anyhow-error-response.md#步骤-3一个泛型-from-让--接住一切)一模一样**,官方注释也直接指向了那个示例。
+**`AppError` 这段和[第 15 章](15-anyhow-error-response.md#步骤-3一个泛型-from-让-接住一切)一模一样**,官方注释也直接指向了那个示例。
 
 **注意这次 `into_response` 里有 `tracing::error!`** —— 和[第 14 章](14-error-handling.md#为什么不能在-into_response-里记日志)强调的"不要在 `into_response` 里记日志"冲突。
 

@@ -670,7 +670,7 @@ async fn handler_about(State(state): State<Arc<AppState>>) -> Result<Html<String
 
 学完两章,可以把 askama 和 minijinja 摆在一起看:
 
-| | askama(第 04 章) | minijinja(本章) |
+| | askama([第 04 章](04-templates.md)) | minijinja(本章) |
 |---|---|---|
 | 解析时机 | 编译期 | 运行期 |
 | 模板变量来源 | struct 字段 | `context!` 键值对 |
@@ -678,10 +678,10 @@ async fn handler_about(State(state): State<Arc<AppState>>) -> Result<Html<String
 | 语法错误 | 编译失败 | 注册时 panic(启动即崩) |
 | 模板来源 | 必须是源码目录下的文件 | 任意字符串,可从数据库/网络加载 |
 | 热重载 | 不支持 | 支持(本章因用 `include_str!` 而放弃了) |
-| 与 axum 集成 | 自己写 `IntoResponse`(第 04 章步骤 3) | 引擎放 `State`,handler 里 `get_template` |
+| 与 axum 集成 | 自己写 `IntoResponse`([第 04 章](04-templates.md)步骤 3) | 引擎放 `State`,handler 里 `get_template` |
 | 状态需求 | 无(模板已编译进代码) | 需要 `State` 共享 `Environment` |
 
-最后一行是个容易忽略的差别:**askama 不需要应用状态,minijinja 需要。** 因为 askama 把模板变成了代码,不存在"运行时要拿到引擎"的问题;minijinja 的引擎是个运行时对象,必须共享。这也解释了为什么 `State` 这个机制在本章而不是第 04 章出现。
+最后一行是个容易忽略的差别:**askama 不需要应用状态,minijinja 需要。** 因为 askama 把模板变成了代码,不存在"运行时要拿到引擎"的问题;minijinja 的引擎是个运行时对象,必须共享。这也解释了为什么 `State` 这个机制在本章而不是[第 04 章](04-templates.md)出现。
 
 实际选择建议:模板固定、追求编译期保障、不需要热重载 → askama;需要动态加载模板、团队熟悉 Jinja2、开发期希望改模板即生效 → minijinja。
 
@@ -689,7 +689,7 @@ async fn handler_about(State(state): State<Arc<AppState>>) -> Result<Html<String
 
 **1. 消掉三个 handler 的重复。** 抽一个辅助函数,让三个 handler 各自只剩两三行。
 
-提示:签名可以是 `fn render(state: &AppState, name: &str, ctx: minijinja::value::Value) -> Result<Html<String>, StatusCode>`。`context!` 宏返回的就是 `Value`。顺手把 `.unwrap()` 换成 `.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?`——这样那个一直没用上的 `Err` 分支终于有了意义,也是第 14 章错误处理的预习。
+提示:签名可以是 `fn render(state: &AppState, name: &str, ctx: minijinja::value::Value) -> Result<Html<String>, StatusCode>`。`context!` 宏返回的就是 `Value`。顺手把 `.unwrap()` 换成 `.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?`——这样那个一直没用上的 `Err` 分支终于有了意义,也是[第 14 章](14-error-handling.md)错误处理的预习。
 
 **2. 改成运行时读取模板文件,实现改模板不重编译。** 把 `include_str!` 换成 `std::fs::read_to_string`。
 
@@ -703,7 +703,7 @@ async fn handler_about(State(state): State<Arc<AppState>>) -> Result<Html<String
 
 minijinja 在运行期加载和解析模板,换来了模板来源灵活、可热重载,代价是变量名写错不会编译失败——本章亲手验证了它会静默输出空值。模板继承用 `{% extends %}` + `{% block %}` 实现布局复用,`super()` 用来在覆盖块时保留父模板内容,改一处布局三个页面同步生效。
 
-`State<S>` 提取器解决"启动时创建一次、所有 handler 共享"的资源该怎么传递的问题。状态用 `with_state` 挂到 `Router` 上,类型从 `Router<S>` 变回 `Router<()>`——只有后者能交给 `serve`,所以忘记提供状态是编译错误。状态必须 `Clone`,所以通常包一层 `Arc` 让克隆变成引用计数加一。共享**可变**状态还需要在 `Arc` 里套锁,那是第 22 章的内容。
+`State<S>` 提取器解决"启动时创建一次、所有 handler 共享"的资源该怎么传递的问题。状态用 `with_state` 挂到 `Router` 上,类型从 `Router<S>` 变回 `Router<()>`——只有后者能交给 `serve`,所以忘记提供状态是编译错误。状态必须 `Clone`,所以通常包一层 `Arc` 让克隆变成引用计数加一。共享**可变**状态还需要在 `Arc` 里套锁,那是[第 22 章](22-key-value-store.md)的内容。
 
 入门阶段到这里结束。你已经能写出一个有路由、能收表单、能渲染页面、有共享状态的服务。但这六章里有不少地方是"先凑合"的:满地的 `.unwrap()`、默认的纯文本错误响应、看不懂的 404 页面。
 

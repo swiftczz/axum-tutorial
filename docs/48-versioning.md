@@ -55,7 +55,7 @@ API 一旦发布出去,就有别人的代码在依赖它。**破坏性变更**�
 
 ### 回顾:`FromRequest` 与 `FromRequestParts`
 
-[第 08 章](08-parse-body-based-on-content-type.md#自定义提取器)讲过这对 trait:
+[第 08 章](08-parse-body-based-on-content-type.md#fromrequest-与-fromrequestparts-的实现细节)讲过这对 trait:
 
 | | `FromRequest` | `FromRequestParts` |
 |---|---|---|
@@ -107,7 +107,7 @@ let params: Path<HashMap<String, String>> = parts.extract().await?;
 .route("/{version}/users/{id}", get(other))   // 两个参数!
 ```
 
-用 `Path<String>` 的话,第二条路由会因为参数个数不匹配而失败([第 11 章](11-customize-path-rejection.md#wrongnumberofparameters)见过这个拒绝类型)。
+用 `Path<String>` 的话,第二条路由会因为参数个数不匹配而失败([第 11 章](11-customize-path-rejection.md#路径参数会怎么失败)见过这个拒绝类型)。
 
 `Path<HashMap<String, String>>` **把所有路径参数按名字装进一个 map**,不管有几个。然后按名字取:
 
@@ -345,7 +345,7 @@ async fn handler(version: Version) -> Html<String> {
 
 > **更好的写法**:这里返回 **`404 Not Found` 是不对的**。`version` 参数缺失意味着开发者把 `Version` 提取器用在了一条没有 `{version}` 段的路由上,**这是服务端的配置错误,应该是 `500 Internal Server Error`**。返回 404 会让排查的人以为是路由没注册,而实际上路由匹配上了、只是参数名写错了。
 >
-> 这和[第 11 章](11-customize-path-rejection.md#代价与边界)指出的 `WrongNumberOfParameters` 该用 500 而不是 400 是**同一类问题**:分不清"客户端错了"和"我自己写错了"。
+> 这和[第 11 章](11-customize-path-rejection.md#400-与-500-的划分为什么重要)指出的 `WrongNumberOfParameters` 该用 500 而不是 400 是**同一类问题**:分不清"客户端错了"和"我自己写错了"。
 
 **⑤ 最后的 `match`**
 
@@ -381,7 +381,7 @@ content-length: 0
 
 **注意这个 404 的 body 是空的**,而 `/v4/foo` 那个 404 有 `unknown version`。**两种 404 的来源完全不同**:前者是路由根本没匹配上(axum 默认的兜底,[第 06 章](06-global-404-handler.md)讲过),后者是路由匹配上了但提取器拒绝了。
 
-**排查线上问题时先分清是哪一种** —— 和[第 43 章](43-reverse-proxy.md#步骤-6一个必须知道的边界只有--被代理)那个"代理自己 404 vs 上游 404"是同样的道理。
+**排查线上问题时先分清是哪一种** —— 和[第 43 章](43-reverse-proxy.md#步骤-6一个必须知道的边界只有-被代理)那个"代理自己 404 vs 上游 404"是同样的道理。
 
 ### 步骤 3:写测试
 
@@ -701,7 +701,7 @@ mod tests {
 
 **5. 支持请求头版本化,并和路径版本化共存。**
 
-提示:改造 `Version` 的 `from_request_parts`:先看 `X-API-Version` 头,没有再回退到路径参数,都没有就用默认版本。 注意加上 `Vary: X-API-Version` 响应头,否则缓存会串味([第 39 章](39-compression.md#步骤-2响应压缩)讲过 `Vary` 的作用)。**做完你会发现:`nest` 在这个场景下就不适用了,提取器方案的价值在这里才显现出来。**
+提示:改造 `Version` 的 `from_request_parts`:先看 `X-API-Version` 头,没有再回退到路径参数,都没有就用默认版本。 注意加上 `Vary: X-API-Version` 响应头,否则缓存会串味([第 39 章](39-compression.md#步骤-2加上双向压缩)讲过 `Vary` 的作用)。**做完你会发现:`nest` 在这个场景下就不适用了,提取器方案的价值在这里才显现出来。**
 
 ## 小结与下一章预告
 

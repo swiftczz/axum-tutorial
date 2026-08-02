@@ -11,7 +11,7 @@
 - `anyhow::Error` 是什么,它和 `thiserror` 的分工
 - 一个泛型 `From` 实现如何让 `?` 接住任意错误类型
 - 为什么必须自己定义 `AppError` 而不能直接用 `anyhow::Error`(孤儿规则)
-- 这个模式的适用边界,以及它和第 14 章做法的取舍
+- 这个模式的适用边界,以及它和[第 14 章](14-error-handling.md)做法的取舍
 
 ## 前置知识
 
@@ -36,7 +36,7 @@ Rust 错误处理生态里这两个 crate 经常一起出现,它们解决的是*
 
 **写应用通常可以用 `anyhow`**:大多数错误的最终归宿都是"记一条日志,返回 500"。既然处理方式相同,区分类型就没有价值。
 
-本章示例是应用,所以用 `anyhow`。第 14 章那种"客户端错误和服务端错误要区别对待"的场景,则需要能区分类型——两章的取舍不同,结尾会对比。
+本章示例是应用,所以用 `anyhow`。[第 14 章](14-error-handling.md)那种"客户端错误和服务端错误要区别对待"的场景,则需要能区分类型——两章的取舍不同,结尾会对比。
 
 ### anyhow 的两个实用能力
 
@@ -107,9 +107,22 @@ cargo add anyhow
 
 ## 分步构建
 
-### 步骤 1:先撞一次编译错误
+### 步骤 1:为什么不能直接返回 anyhow::Error
 
-**要做什么**:故意用 `anyhow::Error` 当 handler 的错误类型,看编译器怎么说。这一步是为了让下一步的 `AppError` 有存在理由。
+**要做什么**:看看直接返回 `anyhow::Error` 为什么不行，以及如何通过 `AppError` newtype 包装解决。
+
+如果在 handler 里直接写 `async fn handler() -> Result<(), anyhow::Error>`,你会收到一条编译器报错:
+
+```
+error[E0277]: the trait bound `fn() -> ... {handler}: Handler<_, _>` is not satisfied
+   |
+   |     Router::new().route("/", get(handler))
+   |                              --- ^^^^^^^ the trait `Handler<_, _>` is not implemented
+```
+
+**这段报错的原因**:[第 01 章](01-hello-world.md#handler为什么普通函数能当处理器)讲过,handler 的返回值必须实现 `IntoResponse`。第三方 crate 里的 `anyhow::Error` 没有也不可能为 axum 实现 `IntoResponse`(Rust 的 orphan rule 限制)。
+
+解决办法是**定义一个 Newtype 包住 `anyhow::Error`,并为它实现 `IntoResponse` 和泛型 `From`**:
 
 ```rust
 // src/main.rs
@@ -329,6 +342,8 @@ Caused by:
 
 改回官方示例的 `try_thing()?` 版本。
 
+> 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,断言 `GET /` 返回 `500` 且 body 是 `Something went wrong: it failed!`。测试写法见[第 21 章](21-testing.md)。
+
 ## 完整代码
 
 `src/main.rs`:
@@ -391,7 +406,6 @@ where
 }
 ```
 
-> 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,断言 `GET /` 返回 `500` 且 body 是 `Something went wrong: it failed!`。测试写法见第 21 章。
 
 ## 代价与边界
 
@@ -410,13 +424,13 @@ struct AppError {
 
 **示例把错误消息返回给了客户端。** `format!("Something went wrong: {}", self.0)` 里的 `self.0` 是实际的错误描述。[第 14 章](14-error-handling.md#4xx-与-5xx-决定了两件事)讲过为什么不该这样——错误信息常常泄露文件路径、数据库表名、内部服务地址。生产环境应该改成固定文本,把详细信息记进日志。
 
-**没有记日志。** 本章示例完全没有日志——错误返回给客户端之后就消失了。第 14 章那套"扩展 + 中间件"的做法在这里同样适用,而且更有必要,因为 `anyhow` 的错误链只有记录下来才有价值。
+**没有记日志。** 本章示例完全没有日志——错误返回给客户端之后就消失了。[第 14 章](14-error-handling.md)那套"扩展 + 中间件"的做法在这里同样适用,而且更有必要,因为 `anyhow` 的错误链只有记录下来才有价值。
 
 **丢失类型信息是双刃剑。** 省掉了 enum 变体,但也失去了"针对特定错误做特定处理"的能力。如果某天需要"数据库连接失败时重试、其它错误直接返回",用 `anyhow` 就得靠 `downcast_ref` 去猜类型,不如一开始就用 enum。
 
 **两章做法怎么选:**
 
-| | 第 14 章(enum) | 第 15 章(anyhow) |
+| | [第 14 章](14-error-handling.md)(enum) | 第 15 章(anyhow) |
 |---|---|---|
 | 加一种错误来源 | 加变体 + `From` | 零成本 |
 | 能否按错误类型分流 | 能 | 不能(除非 downcast) |
@@ -451,7 +465,7 @@ enum AppError {
 
 **3. 验证 `?` 到底能接住多少种错误。**
 
-提示:写一个 handler 依次调用 `std::fs::read_to_string`、`str::parse::<u32>`、`serde_json::from_str`,三种错误类型全用 `?`。确认不需要为它们添加任何 `From` 实现。然后想想:如果换成第 14 章那套 enum 做法,你需要写多少代码?
+提示:写一个 handler 依次调用 `std::fs::read_to_string`、`str::parse::<u32>`、`serde_json::from_str`,三种错误类型全用 `?`。确认不需要为它们添加任何 `From` 实现。然后想想:如果换成[第 14 章](14-error-handling.md)那套 enum 做法,你需要写多少代码?
 
 ## 小结与下一章预告
 

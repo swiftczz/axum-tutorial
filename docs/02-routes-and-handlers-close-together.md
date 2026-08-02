@@ -4,7 +4,7 @@
 
 一个有三条路由的服务:`GET /`、`GET /foo`、`POST /foo`。
 
-功能很简单,重点在**代码怎么组织**。你会先用第 01 章的平铺写法写一遍,亲身体会它在多路由场景下的问题,然后重构成"每条路由自带处理器"的形式,用 `Router::merge` 组装起来。
+功能很简单,重点在**代码怎么组织**。你会先用[第 01 章](01-hello-world.md)的平铺写法写一遍,亲身体会它在多路由场景下的问题,然后重构成"每条路由自带处理器"的形式,用 `Router::merge` 组装起来。
 
 学完本章你将掌握:
 
@@ -16,7 +16,7 @@
 
 ### 路由表膨胀带来的问题
 
-第 01 章的写法是这样的:
+[第 01 章](01-hello-world.md)的写法是这样的:
 
 ```rust
 let app = Router::new().route("/", get(handler));
@@ -32,7 +32,7 @@ async fn handler() -> Html<&'static str> { /* ... */ }
 
 这不是 axum 特有的问题,任何"路由集中声明"的框架都有。常见的应对办法有几种:
 
-- 按业务模块拆成子路由,再用 `Router::nest` 挂到父路由上(第 23 章 todos 和第 48 章 versioning 会用到)
+- 按业务模块拆成子路由,再用 `Router::nest` 挂到父路由上([第 23 章](23-todos.md) todos 和[第 48 章](48-versioning.md) versioning 会用到)
 - 用宏或属性注解把路径写在 handler 上方(Rocket、actix-web 的风格,axum 刻意不这么做)
 - **把每条路由包成一个返回 `Router` 的函数,路径和 handler 写在一起,再合并** —— 这就是本章示例展示的做法
 
@@ -55,7 +55,7 @@ get(show).post(create).delete(remove)
 
 这三个方法共享同一个路径,是同一个 `MethodRouter` 里的三个分支。
 
-理解这个两层结构,第 01 章看到的行为就顺理成章了:请求 `POST /` 时,`Router` 成功匹配到 `/`,交给它下面的 `MethodRouter`;`MethodRouter` 发现自己只有 `GET` 分支,于是返回 `405` 并把已有分支列进 `allow` 头部。两层各管一段,各给各自的错误码。
+理解这个两层结构,[第 01 章](01-hello-world.md)看到的行为就顺理成章了:请求 `POST /` 时,`Router` 成功匹配到 `/`,交给它下面的 `MethodRouter`;`MethodRouter` 发现自己只有 `GET` 分支,于是返回 `405` 并把已有分支列进 `allow` 头部。两层各管一段,各给各自的错误码。
 
 ### MethodRouter<S> 里的 S 是什么
 
@@ -76,7 +76,7 @@ cargo new routes-and-handlers-close-together
 cd routes-and-handlers-close-together
 ```
 
-依赖和第 01 章一样:
+依赖和[第 01 章](01-hello-world.md)一样:
 
 ```bash
 cargo add axum
@@ -87,7 +87,7 @@ cargo add tokio --features full
 
 ### 步骤 1:先用平铺写法写出三条路由
 
-**要做什么**:用第 01 章的风格实现 `GET /`、`GET /foo`、`POST /foo`,然后看看它哪里不舒服。
+**要做什么**:用[第 01 章](01-hello-world.md)的风格实现 `GET /`、`GET /foo`、`POST /foo`,然后看看它哪里不舒服。
 
 ```rust
 // src/main.rs
@@ -226,7 +226,7 @@ fn post_foo() -> Router {
 这一点要和 `Router::nest` 区分开。`nest("/api", other)` 会给 `other` 里的所有路径加上 `/api` 前缀,`/foo` 变成 `/api/foo`。两个都是组合 `Router` 的手段,但语义完全不同:
 
 - `merge` — 平级合并,用于把同一层级的路由拆开写
-- `nest` — 嵌套挂载,用于按模块划分路径空间(第 23 章、第 48 章会用)
+- `nest` — 嵌套挂载,用于按模块划分路径空间([第 23 章](23-todos.md)、[第 48 章](48-versioning.md)会用)
 
 **关于 `/foo` 被注册了两次。** `get_foo()` 和 `post_foo()` 都往 `/foo` 上注册,合并后不会冲突——因为它们占的是**不同的方法分支**。`merge` 在遇到相同路径时会尝试把两边的 `MethodRouter` 合并起来,`GET` 和 `POST` 不重叠,合并成功。
 
@@ -415,7 +415,7 @@ fn route(path: &str, method_router: MethodRouter<()>) -> Router {
 
 `main` 里仍然有一份 `.merge()` 清单,新增路由还是要改两个地方(加函数 + 加 merge)。它把"改动的距离"缩短了,但没有消除。
 
-内层 `async fn handler` 不能捕获外层变量,所以如果几条路由需要共享一些初始化好的东西,这个模式就不太顺手了——那种情况该用 `State`(第 22 章)。
+内层 `async fn handler` 不能捕获外层变量,所以如果几条路由需要共享一些初始化好的东西,这个模式就不太顺手了——那种情况该用 `State`([第 22 章](22-key-value-store.md))。
 
 **更适合的场合**:路由数量中等(十几条到几十条)、按功能横向切分的项目。
 

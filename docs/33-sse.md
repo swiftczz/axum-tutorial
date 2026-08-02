@@ -174,6 +174,8 @@ cargo add tokio-stream
 cargo add tower-http --features fs,trace
 cargo add tracing
 cargo add tracing-subscriber --features env-filter
+cargo add --dev eventsource-stream
+cargo add --dev reqwest --no-default-features --features stream
 ```
 
 `tower-http` 的 `fs` feature 提供 `ServeDir`(静态文件服务,[第 38 章](38-static-file-server.md)的主题)。
@@ -470,7 +472,7 @@ fn app() -> Router {
 // ...(sse_handler 不变)
 ```
 
-**`fallback_service(static_files_service)`** —— [第 06 章](06-global-404-handler.md#fallback路由表的兜底分支)讲过 `fallback` 接受 handler,`fallback_service` 则接受一个 `Service`。`ServeDir` 是个 `Service`,所以用后者。
+**`fallback_service(static_files_service)`** —— [第 06 章](06-global-404-handler.md#fallback匹配不上时交给谁)讲过 `fallback` 接受 handler,`fallback_service` 则接受一个 `Service`。`ServeDir` 是个 `Service`,所以用后者。
 
 效果是:**先匹配 `/sse`,匹配不上的一律交给静态文件服务**。
 
@@ -594,9 +596,64 @@ async fn sse_handler(
             .text("keep-alive-text"),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use eventsource_stream::Eventsource;
+    use tokio::net::TcpListener;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn integration_test() {
+        // A helper function that spawns our application in the background
+        async fn spawn_app(host: impl Into<String>) -> String {
+            let host = host.into();
+            // Bind to localhost at the port 0, which will let the OS assign an available port to us
+            let listener = TcpListener::bind(format!("{host}:0")).await.unwrap();
+            // Retrieve the port assigned to us by the OS
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(async {
+                axum::serve(listener, app()).await;
+            });
+            // Returns address (e.g. http://127.0.0.1{random_port})
+            format!("http://{host}:{port}")
+        }
+        let listening_url = spawn_app("127.0.0.1").await;
+
+        let mut event_stream = reqwest::Client::new()
+            .get(format!("{listening_url}/sse"))
+            .header("User-Agent", "integration_test")
+            .send()
+            .await
+            .unwrap()
+            .bytes_stream()
+            .eventsource()
+            .take(1);
+
+        let mut event_data: Vec<String> = vec![];
+        while let Some(event) = event_stream.next().await {
+            match event {
+                Ok(event) => {
+                    // break the loop at the end of SSE stream
+                    if event.data == "[DONE]" {
+                        break;
+                    }
+
+                    event_data.push(event.data);
+                }
+                Err(_) => {
+                    panic!("Error in event stream");
+                }
+            }
+        }
+
+        assert!(event_data[0] == "hi!");
+    }
+}
 ```
 
-> 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,用 `reqwest` 的 `bytes_stream()` 加 `eventsource-stream` 解析 SSE 流,断言收到的第一个事件是 `hi!`。它启动了真实服务器(端口 0 让系统分配),这个手法[第 21 章](21-testing.md#什么时候仍需真实服务器)讲过。测试依赖是 `eventsource-stream` 和 `reqwest`(feature `stream`)。
+测试用 `reqwest` 的 `bytes_stream()` 加 `eventsource-stream` 解析 SSE 流,断言收到的第一个事件是 `hi!`。它启动了真实服务器(端口 0 让系统分配),这个手法[第 21 章](21-testing.md#什么时候仍需真实服务器)讲过。
 
 ## 代价与边界
 

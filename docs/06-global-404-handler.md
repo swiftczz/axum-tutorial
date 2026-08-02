@@ -16,7 +16,7 @@
 
 ### 默认 404 的问题
 
-[第 01 章](01-hello-world.md#跑起来看)见过 axum 默认的 `404`:
+[第 01 章](01-hello-world.md#步骤-1能跑起来的最小服务)见过 axum 默认的 `404`:
 
 ```
 HTTP/1.1 404 Not Found
@@ -60,7 +60,7 @@ async fn handler_404(uri: Uri) -> impl IntoResponse {
 
 ### fallback 不管 405
 
-这是最容易搞错的一点。[第 01 章](01-hello-world.md#跑起来看)和[第 02 章](02-routes-and-handlers-close-together.md#router-与-methodrouter-的分工)讲过 axum 的两层路由:`Router` 按路径分发给出 `404`,`MethodRouter` 按方法分发给出 `405`。
+这是最容易搞错的一点。[第 01 章](01-hello-world.md#步骤-1能跑起来的最小服务)和[第 02 章](02-routes-and-handlers-close-together.md#router-与-methodrouter-的分工)讲过 axum 的两层路由:`Router` 按路径分发给出 `404`,`MethodRouter` 按方法分发给出 `405`。
 
 `fallback` 只接管**第一层**的失败。请求 `POST /` 时路径匹配成功了,失败发生在第二层,所以 fallback **不会**被调用,客户端仍然收到默认的 `405`。
 
@@ -94,7 +94,7 @@ let app = Router::new()
 | `([(&str, &str); N], T)` | 自定义头部 + body,状态码默认 `200` |
 | `(HeaderMap, T)` | 同上,用 `HeaderMap` 形式 |
 
-`T` 本身也得实现 `IntoResponse`,所以可以嵌套——`(StatusCode::NOT_FOUND, Html("<h1>404</h1>"))` 就是"`404` + HTML 页面"。第 07 章会用到带头部的那种形式。
+`T` 本身也得实现 `IntoResponse`,所以可以嵌套——`(StatusCode::NOT_FOUND, Html("<h1>404</h1>"))` 就是"`404` + HTML 页面"。[第 07 章](07-handle-head-request.md)会用到带头部的那种形式。
 
 这个设计让"改一下状态码"这种小需求不需要手工构造 `Response`,只要在返回值外面套个元组。
 
@@ -118,7 +118,7 @@ cargo add tracing-subscriber --features env-filter
 
 ### 步骤 1:一个正常的服务
 
-**要做什么**:先把第 01 章那个服务重建一遍,确认默认 `404` 的行为。
+**要做什么**:先把[第 01 章](01-hello-world.md)那个服务重建一遍,确认默认 `404` 的行为。
 
 ```rust
 // src/main.rs

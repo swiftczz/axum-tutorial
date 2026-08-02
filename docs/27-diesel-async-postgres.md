@@ -23,7 +23,7 @@
 
 `diesel-async` 是官方维护的适配层,它**重新实现了执行层**:底层用 `tokio-postgres` 这类异步驱动收发数据,把 diesel 的查询方法改成 `async fn`。
 
-**保留的部分**(和第 26 章完全一样):
+**保留的部分**(和[第 26 章](26-diesel-postgres.md)完全一样):
 
 - `table!` 宏声明的 schema
 - `HasQuery`、`Insertable` 等派生宏
@@ -33,7 +33,7 @@
 
 **改变的部分**:
 
-| | diesel(第 26 章) | diesel-async(本章) |
+| | diesel([第 26 章](26-diesel-postgres.md)) | diesel-async(本章) |
 |---|---|---|
 | 查询执行 | 同步阻塞 | `async fn` + `.await` |
 | 是否需要 `spawn_blocking` | **需要**(`interact`) | 不需要 |
@@ -91,7 +91,7 @@ diesel-async = { version = "0.9", features = ["postgres", "bb8", "migrations"] }
 
 ### 异步迁移
 
-第 26 章的迁移要包在 `interact` 里,这一章有专门的异步版本:
+[第 26 章](26-diesel-postgres.md)的迁移要包在 `interact` 里,这一章有专门的异步版本:
 
 ```rust
 let mut harness = AsyncMigrationHarness::new(pool.get_owned().await.unwrap());
@@ -108,7 +108,7 @@ harness.run_pending_migrations(MIGRATIONS).unwrap();
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 ```
 
-第 26 章写的是 `embed_migrations!("migrations/")`。不带参数时宏用默认路径 `migrations/`,效果相同。
+[第 26 章](26-diesel-postgres.md)写的是 `embed_migrations!("migrations/")`。不带参数时宏用默认路径 `migrations/`,效果相同。
 
 ## 项目搭建
 
@@ -249,7 +249,7 @@ async fn main() {
 
 **`type Pool = bb8::Pool<AsyncPgConnection>`** —— 起别名的理由和[第 25 章](25-tokio-postgres.md#步骤-1建池子并查询)一样,类型名太长。
 
-**连接池和迁移这段值得和第 26 章并排看:**
+**连接池和迁移这段值得和[第 26 章](26-diesel-postgres.md)并排看:**
 
 ```rust
 // 第 26 章(同步)
@@ -294,7 +294,7 @@ docker exec -it axum-tutorial-pg psql -U postgres -d diesel_async_demo -c '\dt'
  public | users                      | table | postgres
 ```
 
-**和第 26 章的结果完全一致** —— 迁移机制没变,只是执行方式从阻塞变成了异步。
+**和[第 26 章](26-diesel-postgres.md)的结果完全一致** —— 迁移机制没变,只是执行方式从阻塞变成了异步。
 
 ### 步骤 2:查询与插入
 
@@ -384,7 +384,7 @@ let res = User::query()
 
 1. **没有闭包了。** 查询直接写在 handler 里,不用包进 `interact`。
 2. **只有一层 `map_err`。** [第 26 章](26-diesel-postgres.md#三层错误从哪来)那个 `Result<Result<T, E1>, E2>` 消失了——因为没有 `interact` 这层抽象,自然没有它的失败模式。
-3. **`&mut conn`。** 异步连接的方法要求可变引用,所以 `let mut conn`。第 26 章的 `interact` 闭包内部替你处理了这件事。
+3. **`&mut conn`。** 异步连接的方法要求可变引用,所以 `let mut conn`。[第 26 章](26-diesel-postgres.md)的 `interact` 闭包内部替你处理了这件事。
 
 **DSL 部分一字未改** —— `User::query()`、`insert_into(...).values(...).returning(...)` 全都一样。这正是 `diesel-async` 的设计目标:**只换执行层,不动查询层。**
 
@@ -706,7 +706,7 @@ conn.transaction(|conn| async move {
 
 **2. 对比两章的编译产物和编译时间。**
 
-提示:分别在第 26、27 章的项目里跑 `cargo build --release --timings`,对比总耗时。再用 `ldd target/release/diesel-postgres`(Linux)或 `otool -L`(macOS)看动态链接的库——第 26 章那个会依赖 `libpq`,本章的不会。**这个差别在做 Docker 镜像时很实际。**
+提示:分别在第 26、27 章的项目里跑 `cargo build --release --timings`,对比总耗时。再用 `ldd target/release/diesel-postgres`(Linux)或 `otool -L`(macOS)看动态链接的库——[第 26 章](26-diesel-postgres.md)那个会依赖 `libpq`,本章的不会。**这个差别在做 Docker 镜像时很实际。**
 
 **3. 把 `create_user` 也改成用 `DatabaseConnection` 提取器,然后想清楚该不该这么做。**
 

@@ -71,7 +71,7 @@ where
 
 ### 中间件的返回类型
 
-本章中间件的签名和第 09 章略有不同:
+本章中间件的签名和[第 09 章](09-consume-body-in-extractor-or-middleware.md)略有不同:
 
 ```rust
 async fn print_request_response(
@@ -80,7 +80,7 @@ async fn print_request_response(
 ) -> Result<impl IntoResponse, (StatusCode, String)>
 ```
 
-错误类型是 `(StatusCode, String)` 而不是第 09 章的 `Response`。两种都可以——[第 08 章](08-parse-body-based-on-content-type.md#rejection-该选什么类型)那张表讲过取舍:错误形态单一时用具体类型更清楚,形态多样时才需要擦除成 `Response`。
+错误类型是 `(StatusCode, String)` 而不是[第 09 章](09-consume-body-in-extractor-or-middleware.md)的 `Response`。两种都可以——[第 08 章](08-parse-body-based-on-content-type.md#rejection-该选什么类型)那张表讲过取舍:错误形态单一时用具体类型更清楚,形态多样时才需要擦除成 `Response`。
 
 这里读 body 失败只有一种处理方式,所以用元组就够了。
 
@@ -105,7 +105,7 @@ cargo add tracing-subscriber --features env-filter
 
 ### 步骤 1:只处理请求体
 
-**要做什么**:先把第 09 章那套搬过来,只打印请求体。这一步的代码你应该很熟悉。
+**要做什么**:先把[第 09 章](09-consume-body-in-extractor-or-middleware.md)那套搬过来,只打印请求体。这一步的代码你应该很熟悉。
 
 ```rust
 // src/main.rs
@@ -324,7 +324,7 @@ date: Thu, 30 Jul 2026 11:39:12 GMT
 
 **而且 `content-length` 还停留在 19。** 因为头部保存在 `parts` 里,原样搬了过来;body 却被换成了空的。**响应头和实际内容对不上了**——严格来说这是一个违反 HTTP 规范的响应,某些客户端会一直等那 19 个字节直到超时。
 
-这比第 09 章那个"下游拿到空 body"更隐蔽:那次至少服务端逻辑还在正常跑,这次是**响应本身自相矛盾**,而 curl 只是安静地显示了个空行。
+这比[第 09 章](09-consume-body-in-extractor-or-middleware.md)那个"下游拿到空 body"更隐蔽:那次至少服务端逻辑还在正常跑,这次是**响应本身自相矛盾**,而 curl 只是安静地显示了个空行。
 
 改回 `Body::from(bytes)`。
 
@@ -419,7 +419,7 @@ where
 - **大文件下载**会先在内存里攒完整个文件再发出去,10 个并发下载 1GB 文件 = 10GB 内存
 - **首字节时间(TTFB)**从"handler 一开始产出就发"变成"handler 完全结束才发",用户感知的延迟显著增加
 
-**内存翻倍。** 请求体和响应体都要完整驻留内存。第 09 章那个只有请求体一份。
+**内存翻倍。** 请求体和响应体都要完整驻留内存。[第 09 章](09-consume-body-in-extractor-or-middleware.md)那个只有请求体一份。
 
 **日志会记录敏感数据。** 这是最容易被忽视的风险:请求体里有密码、身份证号、支付信息,响应体里有用户隐私、token。这些全被原样写进日志,而日志通常会被转发到集中式系统、长期保留、被很多人访问。**这可能直接构成合规问题**(GDPR、个人信息保护法)。
 

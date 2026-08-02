@@ -102,7 +102,7 @@ name: Can not be empty
 
 本章示例有个容易看漏的地方:路由注册的是 `get(handler)`,而 handler 用的是 `Form` 提取器。
 
-[第 03 章](03-form.md#htm-表单是怎么发数据的)说 `Form` 解析 `application/x-www-form-urlencoded` 的请求体,而 `GET` 请求通常没有 body。这不矛盾——**axum 的 `Form` 提取器对方法是敏感的**:
+[第 03 章](03-form.md#html-表单是怎么发数据的)说 `Form` 解析 `application/x-www-form-urlencoded` 的请求体,而 `GET` 请求通常没有 body。这不矛盾——**axum 的 `Form` 提取器对方法是敏感的**:
 
 - `GET` / `HEAD` 请求 → 从**查询字符串**(URL 里 `?` 后面的部分)反序列化
 - 其它方法 → 从**请求体**反序列化
@@ -340,7 +340,7 @@ impl IntoResponse for ServerError {
 }
 ```
 
-自定义提取器的套路[第 08 章](08-parse-body-based-on-content-type.md#步骤-2实现-fromrequest)和[第 10 章](10-customize-extractor-error.md#步骤-2做法一手写-fromrequest)讲过,这里只看新东西。
+自定义提取器的套路[第 08 章](08-parse-body-based-on-content-type.md#步骤-2实现-jsonorform)和[第 10 章](10-customize-extractor-error.md#步骤-2做法一手写-fromrequest)讲过,这里只看新东西。
 
 **`from_request` 的三行是本章的核心:**
 
@@ -429,6 +429,8 @@ async fn handler(Form(input): Form<NameInput>) -> Html<String> {
 重新运行,`curl '127.0.0.1:3000?name='` 又能通过了。**校验规则还在 struct 上,但没人调用它。**
 
 这说明规则本身不会自动生效——`#[validate(...)]` 只是生成了 `validate()` 方法,得有人调。把提取器换成 `ValidatedForm` 就是"让类型系统替你记得调用它"。改回 `ValidatedForm`。
+
+> 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,四个测试分别覆盖缺字段、空值、单字符、合法值四种输入。测试写法见[第 21 章](21-testing.md)。
 
 ## 完整代码
 
@@ -522,7 +524,6 @@ impl IntoResponse for ServerError {
 }
 ```
 
-> 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,四个测试分别覆盖缺字段、空值、单字符、合法值四种输入。测试写法见第 21 章。
 
 ## 这个模式的边界
 

@@ -248,7 +248,7 @@ async fn integration_testable_handle_socket(mut socket: WebSocket) {
 
 **`ws.on_upgrade(integration_testable_handle_socket)`** 直接传函数名,不需要闭包——因为函数签名正好匹配 `FnOnce(WebSocket) -> Future`。
 
-**`fn app() -> Router`** 这个模式[第 21 章](21-testing.md#fn-app---router-的价值兑现)兑现过价值,这一章会再用一次。
+**`fn app() -> Router`** 这个模式[第 21 章](21-testing.md#fn-app-router-的价值兑现)兑现过价值,这一章会再用一次。
 
 **跑起来看**:
 
@@ -751,7 +751,7 @@ futures-channel = { version = "0.3", features = ["sink"] }
 tokio-tungstenite = "0.29"
 ```
 
-[第 21 章](21-testing.md#创建项目)那个示例就把 `tower` 正确放进了 dev 依赖。
+[第 21 章](21-testing.md#项目搭建)那个示例就把 `tower` 正确放进了 dev 依赖。
 
 **echo handler 太简单,掩盖了真实的测试难点。** 真实的 WebSocket 逻辑通常有状态(连接列表、房间、订阅关系),测试时需要构造这些状态。本章的 handler 是无状态的,所以两种测法都很轻松。[第 37 章](37-chat.md)那个聊天室会引入共享状态,测试难度完全不同。
 

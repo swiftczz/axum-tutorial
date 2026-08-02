@@ -19,7 +19,7 @@ curl http://127.0.0.1:3000/users/abc/teams/1
 - `PathRejection` 和 `ErrorKind` 两层错误结构,以及如何逐个匹配
 - `#[non_exhaustive]` 枚举为什么必须写 `_ =>` 分支
 - **一个关键判断:什么错误该返回 `4xx`,什么该返回 `5xx`**
-- `FromRequestParts` 的自定义实现(第 10 章是 `FromRequest`)
+- `FromRequestParts` 的自定义实现([第 10 章](10-customize-extractor-error.md)是 `FromRequest`)
 
 ## 前置知识
 
@@ -324,7 +324,7 @@ struct PathError {
 
 **注意 `use` 的变化:`extract::Path` 被移除了。** 现在 `Path` 这个名字指向你自己定义的类型,`handler` 的签名一个字都不用改就自动用上了新的提取器。内置的那个改用全路径 `axum::extract::Path` 调用。
 
-这个"同名遮蔽"的手法很实用:**替换实现时调用方无需改动**。第 10 章做法一也是同一套路。
+这个"同名遮蔽"的手法很实用:**替换实现时调用方无需改动**。[第 10 章](10-customize-extractor-error.md)做法一也是同一套路。
 
 **trait bound 直接抄了内置实现的。** 注释写得明白:`these trait bounds are copied from impl FromRequest for axum::extract::path::Path`。既然是委托给内置提取器,约束当然要一致——自己另写一套只会导致某些本该能用的类型用不了。
 
@@ -477,7 +477,7 @@ _ => (
 
 按这个标准回看本章的表:`ParseErrorAtKey`(换个合法参数就行)、`InvalidUtf8InPathParam`(换个正确编码)是 `4xx`;`WrongNumberOfParameters`、`UnsupportedType`(客户端做什么都没用)是 `5xx`。
 
-第 14 章会把这个判断扩展到整个应用的错误处理体系。
+[第 14 章](14-error-handling.md)会把这个判断扩展到整个应用的错误处理体系。
 
 ## 完整代码
 

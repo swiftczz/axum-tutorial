@@ -68,7 +68,7 @@ async fn users_create(...) -> Result<AppJson<User>, AppError> {
 }
 ```
 
-`Result<T, E>` 实现 `IntoResponse` 的前提是 `T` 和 `E` 都实现——[第 05 章](05-templates-minijinja.md#步骤-1布局模板--首页认识-state)提过一次。
+`Result<T, E>` 实现 `IntoResponse` 的前提是 `T` 和 `E` 都实现——[第 05 章](05-templates-minijinja.md#步骤-1布局模板-首页认识-state)提过一次。
 
 ### 为什么不能在 into_response 里记日志
 
@@ -195,7 +195,7 @@ async fn main() {
         .await
         .unwrap();
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-    let _ = axum::serve(listener, app).await;
+    axum::serve(listener, app).await.unwrap();
 }
 
 #[derive(Deserialize)]
@@ -280,9 +280,7 @@ mod time_library {
 
 **`Timestamp::now()?`** 是本步骤的核心。`now()` 返回 `Result<Timestamp, time_library::Error>`,而函数的错误类型是 `AppError`。`?` 之所以能工作,全靠下面那个 `impl From<time_library::Error> for AppError`——[第 12 章](12-validator.md#步骤-2声明校验规则包进提取器)讲过这个机制。
 
-> **更好的写法**:这里的两个 `impl From` 是手写的,用 `thiserror` 的 `#[from]` 属性能自动生成,错误来源一多能省下可观的样板([第 12 章](12-validator.md#thiserror定义错误类型的省事办法)就是那么写的)。示例选择手写是为了直白展示 `?` 背后到底发生了什么——这在教学上是对的,但你自己的项目建议用 `thiserror`。练习题 3 会让你换。
-
-**`let _ = axum::serve(listener, app).await;`** 用 `let _ =` 而不是 `.unwrap()` 来消化 `Result`,官方示例如此。效果上都是忽略那个永不返回的结果。
+> **更好的写法**:这里的两个 `impl From` 是手写的,用 `thiserror` 的 `#[from]` 属性能自动生成,错误来源一多能省下可观的样板([第 12 章](12-validator.md#步骤-2声明校验规则包进提取器)就是那么写的)。示例选择手写是为了直白展示 `?` 背后到底发生了什么——这在教学上是对的,但你自己的项目建议用 `thiserror`。练习题 3 会让你换。
 
 **跑起来看**:
 
@@ -570,7 +568,7 @@ async fn log_app_errors(request: Request, next: Next) -> Response {
 
 **`log_app_errors` 中间件**用的是[第 09 章](09-consume-body-in-extractor-or-middleware.md#中间件在请求前后插入逻辑)的 `from_fn`。这次它只在**响应路上**做事:先 `next.run(request).await` 拿到响应,再检查扩展。请求路上什么都不做。
 
-这正是第 09 章说的"洋葱结构"——`next.run` 之后的代码在响应返回时执行。
+这正是[第 09 章](09-consume-body-in-extractor-or-middleware.md)说的"洋葱结构"——`next.run` 之后的代码在响应返回时执行。
 
 **`tracing::error!(?err, "...")`** 里的 `?err` 按 `Debug` 记录,[第 09 章](09-consume-body-in-extractor-or-middleware.md#步骤-1一个缓冲-body-的提取器)见过这个语法。
 
@@ -849,7 +847,7 @@ async fn main() {
         .await
         .unwrap();
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
-    let _ = axum::serve(listener, app).await;
+    axum::serve(listener, app).await.unwrap();
 }
 
 #[derive(Default, Clone)]
@@ -1024,7 +1022,7 @@ mod time_library {
 
 **`.on_failure(())` 关掉了框架自带的 5xx 日志,这意味着"记录 5xx"的责任完全落在你自己的中间件上。** 如果某个 500 响应不是由 `AppError` 产生的(比如某处直接返回了 `StatusCode::INTERNAL_SERVER_ERROR`,或者 handler panic 了),它就不会被任何人记录。这是一个真实的观测盲区。稳妥的做法是在中间件里额外检查 `response.status().is_server_error()`,兜住所有 5xx。
 
-**`state.users.lock().unwrap()` 会 panic。** `Mutex` 中毒(持锁线程 panic)后所有 `lock()` 都返回 `Err`。示例直接 `unwrap`,细节见第 22 章。
+**`state.users.lock().unwrap()` 会 panic。** `Mutex` 中毒(持锁线程 panic)后所有 `lock()` 都返回 `Err`。示例直接 `unwrap`,细节见[第 22 章](22-key-value-store.md)。
 
 ## 动手练习
 

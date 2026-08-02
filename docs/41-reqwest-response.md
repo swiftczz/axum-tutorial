@@ -135,7 +135,7 @@ tokio_stream::iter(0..5)              // 把普通迭代器变成 Stream
     .throttle(Duration::from_secs(1)) // 每项之间至少间隔 1 秒
 ```
 
-`throttle` [第 33 章](33-sse.md#步骤-4控制节奏)用过。`tokio_stream::iter` 是新的:它把任何 `IntoIterator` 变成一个立刻就绪的 `Stream`,做演示数据源非常方便。
+`throttle` [第 33 章](33-sse.md#步骤-3配上前端页面)用过。`tokio_stream::iter` 是新的:它把任何 `IntoIterator` 变成一个立刻就绪的 `Stream`,做演示数据源非常方便。
 
 ## 项目搭建
 

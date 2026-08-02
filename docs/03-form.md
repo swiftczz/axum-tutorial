@@ -11,7 +11,7 @@
 - 提取器是什么,`Form<T>` 如何把请求体变成你的 struct
 - `serde` 的 `Deserialize` 在其中的角色,以及字段名如何与表单控件对应
 - 提取失败时 axum 的默认行为,以及为什么这是个好的默认值
-- 日志初始化样板的作用(细节留到第 17 章)
+- 日志初始化样板的作用(细节留到[第 17 章](17-tracing-aka-logging.md))
 
 ## 前置知识
 
@@ -62,7 +62,7 @@ name=%E5%BC%A0%E4%B8%89&email=a%40b.com
 
 `Content-Type` 声明格式,`Content-Length` 声明 body 字节数——都是[第 00 章](00-web-basics.md)你手写过的头部。
 
-带文件上传的表单要换成 `multipart/form-data` 格式,那是第 13 章的内容。
+带文件上传的表单要换成 `multipart/form-data` 格式,那是[第 13 章](13-multipart-form.md)的内容。
 
 ### serde 与 Deserialize
 
@@ -97,12 +97,12 @@ axum 内置了一批:
 
 | 提取器 | 从哪取 | 取出什么 |
 |---|---|---|
-| `Path<T>` | URL 路径中的参数 | `/users/{id}` 里的 `id`(第 04 章) |
+| `Path<T>` | URL 路径中的参数 | `/users/{id}` 里的 `id`([第 04 章](04-templates.md)) |
 | `Query<T>` | 查询字符串 | `?page=2&size=10` |
 | `Form<T>` | 请求体(urlencoded) | 表单字段(**本章**) |
 | `Json<T>` | 请求体(JSON) | JSON 对象 |
 | `HeaderMap` | 请求头 | 全部头部 |
-| `State<S>` | 应用状态 | 共享的配置、连接池(第 05 章) |
+| `State<S>` | 应用状态 | 共享的配置、连接池([第 05 章](05-templates-minijinja.md)) |
 | `Request` | 整个请求 | 原始请求对象 |
 
 提取器分两类,这个区别后面章节会反复用到:
@@ -116,7 +116,7 @@ axum 内置了一批:
 async fn handler(Path(id): Path<u32>, headers: HeaderMap, Form(input): Form<Input>) {}
 ```
 
-把 `Form` 放到中间就编译不过。axum 会给出一段解释性的错误信息告诉你原因。第 09 章会深入讲 body 只能消费一次这件事带来的各种后果。
+把 `Form` 放到中间就编译不过。axum 会给出一段解释性的错误信息告诉你原因。[第 09 章](09-consume-body-in-extractor-or-middleware.md)会深入讲 body 只能消费一次这件事带来的各种后果。
 
 ## 项目搭建
 
@@ -246,7 +246,7 @@ RUST_LOG=form=info cargo run
 
 浏览器访问 `http://127.0.0.1:3000/`,能看到两个输入框和一个 Subscribe 按钮。填点内容点提交:
 
-浏览器显示 `Method Not Allowed`。这正是[第 01 章](01-hello-world.md#跑起来看)见过的 `405`——路径 `/` 存在但没有 `POST` 分支。用 curl 确认:
+浏览器显示 `Method Not Allowed`。这正是[第 01 章](01-hello-world.md#步骤-1能跑起来的最小服务)见过的 `405`——路径 `/` 存在但没有 `POST` 分支。用 curl 确认:
 
 ```bash
 curl -i -X POST http://127.0.0.1:3000/
@@ -324,7 +324,7 @@ async fn accept_form(form: Form<Input>) -> Html<String> {
 4. 交给 serde 按 `Input` 的字段反序列化,类型不对或字段缺失就失败
 5. 成功则包成 `Form(input)` 传给你;失败则**不调用你的 handler**,直接返回错误响应
 
-第 00 章你手写过第 2 步(而且写得不健壮,只 `read` 一次),剩下四步全没做。现在它们浓缩成了参数类型里的一个 `Form<Input>`。
+[第 00 章](00-web-basics.md)你手写过第 2 步(而且写得不健壮,只 `read` 一次),剩下四步全没做。现在它们浓缩成了参数类型里的一个 `Form<Input>`。
 
 **`#[derive(Deserialize, Debug)]`** 里,`Deserialize` 是反序列化必需的,`Debug` 是为了下面 `dbg!` 能打印。
 
@@ -428,11 +428,13 @@ Form requests must have `Content-Type: application/x-www-form-urlencoded`
 
 不过默认的拒绝响应是纯文本,对人类友好但对程序不友好——写 API 时前端通常希望拿到结构化的 JSON 错误。想自定义它有几种办法:
 
-- 第 10 章 customize-extractor-error:包一层自己的提取器,返回 JSON 错误
-- 第 11 章 customize-path-rejection:针对 `Path` 提取器定制拒绝响应
-- 第 12 章 validator:在反序列化成功之后再加一层业务校验(邮箱格式、长度限制等)
+- [第 10 章](10-customize-extractor-error.md) customize-extractor-error:包一层自己的提取器,返回 JSON 错误
+- [第 11 章](11-customize-path-rejection.md) customize-path-rejection:针对 `Path` 提取器定制拒绝响应
+- [第 12 章](12-validator.md) validator:在反序列化成功之后再加一层业务校验(邮箱格式、长度限制等)
 
-注意 `Form` 只保证**类型**正确,不保证**业务**合法。上面 `email=bar@axum` 能通过,`email=随便乱写` 也能通过——因为它们都是合法的 `String`。真正的邮箱格式校验是第 12 章的事。
+注意 `Form` 只保证**类型**正确,不保证**业务**合法。上面 `email=bar@axum` 能通过,`email=随便乱写` 也能通过——因为它们都是合法的 `String`。真正的邮箱格式校验是[第 12 章](12-validator.md)的事。
+
+> 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,用 `tower::ServiceExt::oneshot` 在不启动服务器的情况下测试这两个 handler。测试写法见[第 21 章](21-testing.md),那里会完整讲解并补上对应的 `cargo add --dev` 依赖。
 
 ## 完整代码
 
@@ -507,7 +509,6 @@ async fn accept_form(Form(input): Form<Input>) -> Html<String> {
 }
 ```
 
-> 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,用 `tower::ServiceExt::oneshot` 在不启动服务器的情况下测试这两个 handler。测试写法见第 21 章,那里会完整讲解并补上对应的 `cargo add --dev` 依赖。
 
 ## 动手练习
 

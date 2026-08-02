@@ -447,7 +447,7 @@ curl -X POST http://127.0.0.1:3000/
 
 **要做什么**:不写代码,把两章摆在一起看清差别。
 
-| | sqlx(第 24 章) | tokio-postgres + bb8(本章) |
+| | sqlx([第 24 章](24-sqlx-postgres.md)) | tokio-postgres + bb8(本章) |
 |---|---|---|
 | **定位** | 一体化 SQL 工具包 | 驱动 + 独立连接池 |
 | **crate 数量** | 1 | 3 |

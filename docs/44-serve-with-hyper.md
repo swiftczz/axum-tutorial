@@ -161,7 +161,7 @@ handler 的 ConnectInfo<SocketAddr> 提取器读出来
 
 ### `unwrap_infallible`
 
-[第 42 章](42-http-proxy.md#match-err消灭-infallible)用 `match err {}` 消灭过 `Infallible`,本章是另一种形式:
+[第 42 章](42-http-proxy.md#match-err-消灭-infallible)用 `match err {}` 消灭过 `Infallible`,本章是另一种形式:
 
 ```rust
 fn unwrap_infallible<T>(result: Result<T, Infallible>) -> T {
@@ -289,7 +289,7 @@ async fn serve_plain() {
 - 外层:**每条连接**一个 `Router` 克隆
 - 内层:**每个请求**一个 `Router` 克隆
 
-为什么内层还要克隆?因为 hyper 的 `Service::call` 只拿 `&self`,而 tower 的要 `&mut self`([第 42 章](42-http-proxy.md#hyper-的-service--tower-的-service)那张表)。**两次克隆都是 `Arc` 引用计数,几乎零成本。**
+为什么内层还要克隆?因为 hyper 的 `Service::call` 只拿 `&self`,而 tower 的要 `&mut self`([第 42 章](42-http-proxy.md#hyper-的-service-tower-的-service)那张表)。**两次克隆都是 `Arc` 引用计数,几乎零成本。**
 
 **"We don't need to call `poll_ready`" 是什么意思?**
 

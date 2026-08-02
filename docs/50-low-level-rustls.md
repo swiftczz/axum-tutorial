@@ -68,7 +68,7 @@ accept TCP  →  【TLS 握手】  →  TokioIo 包装  →  hyper 跑 HTTP
               tls_acceptor.accept(cnx).await
 ```
 
-**握手完成后拿到的 `TlsStream` 仍然是一个 `AsyncRead + AsyncWrite`** —— 读进来的是解密后的明文,写出去的自动加密。**对上层完全透明**,所以后面那几步和第 44 章逐字相同。
+**握手完成后拿到的 `TlsStream` 仍然是一个 `AsyncRead + AsyncWrite`** —— 读进来的是解密后的明文,写出去的自动加密。**对上层完全透明**,所以后面那几步和[第 44 章](44-serve-with-hyper.md)逐字相同。
 
 **这一步是异步的,而且可能失败**:客户端可能用了不支持的协议版本、可能证书校验不过(mTLS 时)、可能根本不是 TLS 流量(有人拿 `curl http://` 打你的 HTTPS 端口)。**失败只应该放弃这条连接,不能影响服务器。**
 
@@ -694,7 +694,7 @@ let stream = match tokio::time::timeout(Duration::from_secs(10), tls_acceptor.ac
 };
 ```
 
-注意那个**双层 `Result`** —— 外层是超时,内层是握手结果。[第 26 章](26-diesel-postgres.md#双层-result)见过同样的形状。
+注意那个**双层 `Result`** —— 外层是超时,内层是握手结果。[第 26 章](26-diesel-postgres.md#三层错误从哪来)见过同样的形状。
 
 **`accept().await.unwrap()` 会让服务 panic。** 和[第 42 章](42-http-proxy.md#步骤-1不用-axumserve自己写-accept-循环)、[第 44 章](44-serve-with-hyper.md#代价与边界)一样的问题,不重复了。
 

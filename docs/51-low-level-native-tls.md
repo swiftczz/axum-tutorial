@@ -105,13 +105,13 @@ TLS 1.0 和 1.1 已经在 2021 年被 IETF 正式弃用(RFC 8996),PCI DSS 之类
 
 **这正好体现了两种方案的哲学差异**:`rustls` 是"默认安全,不给你不安全的选项";`native-tls` 是"默认跟随系统,安全与否你自己负责"。
 
-### 其余部分和第 50 章相同
+### 其余部分和[第 50 章](50-low-level-rustls.md)相同
 
 以下概念[第 50 章](50-low-level-rustls.md)已经讲透,本章不重复:
 
 - [手写 accept 循环的五件事](50-low-level-rustls.md#tls-握手在连接生命周期里的位置)
 - [握手必须在 spawn 里做](50-low-level-rustls.md#tls-握手在连接生命周期里的位置)
-- [`let ... else` 处理握手失败](50-low-level-rustls.md#let--else)
+- [`let ... else` 处理握手失败](50-low-level-rustls.md#let-else)
 - [`[::1]` 是 IPv6 回环](50-low-level-rustls.md#1ipv6-回环地址)
 - [`TokioIo`、`auto::Builder`、hyper 的 `Service`](44-serve-with-hyper.md#axumserve-的五件事)
 
@@ -292,7 +292,7 @@ RUST_LOG=debug cargo run
 
 **这是一个从[第 50 章](50-low-level-rustls.md)那个示例复制过来时没改的名字。** `EnvFilter` 的指令说的是"把 `example_low_level_rustls` 这个目标开到 debug",而本 crate 的日志目标和它对不上,于是**全被过滤掉了**。
 
-**对比一下第 50 章的写法:**
+**对比一下[第 50 章](50-low-level-rustls.md)的写法:**
 
 ```rust
 .unwrap_or_else(|_| format!("{}=debug", env!("CARGO_CRATE_NAME")).into()),
@@ -326,7 +326,7 @@ cargo run
 
 **要做什么**:对比[第 50 章](50-low-level-rustls.md#步骤-4配置-alpn)的验证结果,看看 HTTP/2 去哪了。
 
-**回顾第 50 章的结果:**
+**回顾[第 50 章](50-low-level-rustls.md)的结果:**
 
 ```bash
 # 第 50 章(rustls + ALPN)

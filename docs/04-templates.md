@@ -37,13 +37,13 @@ axum 的路由语法用花括号声明参数:
 
 所以 `/greet/张三` 匹配成功,`name = "张三"`;`/greet/a/b` 匹配失败(有两段),返回 `404`;`/greet/` 也匹配失败(那一段是空的)。
 
-想匹配剩余全部路径(包括 `/`)要用通配语法 `{*rest}`,第 38 章讲静态文件服务时会用到。
+想匹配剩余全部路径(包括 `/`)要用通配语法 `{*rest}`,[第 38 章](38-static-file-server.md)讲静态文件服务时会用到。
 
 > axum 0.7 及更早版本用 `:name` 这种冒号语法,0.8 改成了 `{name}`。网上很多教程还是老写法,照抄会报 panic。本教程一律用 0.8 的花括号语法。
 
 `Path<T>` 属于[第 03 章](03-form.md#提取器axum-的核心机制)讲的 `FromRequestParts` 类别——它只看路径,不碰 body,所以可以和 `Form`、`Json` 同时出现在参数列表里,而且不必放最后。
 
-单个参数时 `T` 直接写目标类型即可:`Path<String>`、`Path<u32>`。多个参数用元组 `Path<(u32, String)>`,或者一个实现了 `Deserialize` 的 struct。类型转换失败会返回 `400`——比如路由是 `/users/{id}`、提取器是 `Path<u32>`,访问 `/users/abc` 就转不出来。定制这类错误响应是第 11 章的内容。
+单个参数时 `T` 直接写目标类型即可:`Path<String>`、`Path<u32>`。多个参数用元组 `Path<(u32, String)>`,或者一个实现了 `Deserialize` 的 struct。类型转换失败会返回 `400`——比如路由是 `/users/{id}`、提取器是 `Path<u32>`,访问 `/users/abc` 就转不出来。定制这类错误响应是[第 11 章](11-customize-path-rejection.md)的内容。
 
 ### 模板引擎解决什么问题
 
@@ -162,7 +162,7 @@ async fn greet(extract::Path(name): extract::Path<String>) -> Html<String> {
 }
 ```
 
-`main` 和第 03 章完全一样,只有 `app()` 和 handler 是新的。
+`main` 和[第 03 章](03-form.md)完全一样,只有 `app()` 和 handler 是新的。
 
 `extract::Path(name): extract::Path<String>` 是[第 03 章](03-form.md#步骤-2用-form-提取器接收提交)讲过的解构写法。这里用 `extract::Path` 而不是 `use axum::extract::Path` 后直接写 `Path`,是官方示例的选择——好处是读代码时一眼看出这是个提取器,而且避免和标准库的 `std::path::Path` 混淆。后者是很实际的考虑:一个文件相关的模块里同时用到两个 `Path` 会很难受。
 
@@ -388,7 +388,7 @@ where
 
 本章只有一个返回分支,所以 `impl IntoResponse` 没问题。
 
-> **本章不深入**:handler 有多个返回分支时,常用的返回类型是 `Result<T, E>`——只要 `T` 和 `E` 都实现 `IntoResponse`,`Result` 自身就实现。[第 05 章](05-templates-minijinja.md#步骤-1布局模板--首页认识-state)会先用到它,错误类型该怎么设计、如何用 `?` 传播错误见[第 14 章](14-error-handling.md)。
+> **本章不深入**:handler 有多个返回分支时,常用的返回类型是 `Result<T, E>`——只要 `T` 和 `E` 都实现 `IntoResponse`,`Result` 自身就实现。[第 05 章](05-templates-minijinja.md#步骤-1布局模板-首页认识-state)会先用到它,错误类型该怎么设计、如何用 `?` 传播错误见[第 14 章](14-error-handling.md)。
 
 **跑起来看**:
 
@@ -431,6 +431,8 @@ HTTP/1.1 404 Not Found
 ```
 
 `500` 分支很难自然触发——`hello.html` 这么简单的模板不会渲染失败。想验证那条分支,可以临时在模板里加一个会出错的表达式,或者直接读代码确认逻辑。这条分支的价值在于**它存在**:哪天模板变复杂了,失败会变成一个规规矩矩的 `500` 响应,而不是 panic。
+
+> 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,用 `oneshot` 断言 `/greet/Foo` 返回 `<h1>Hello, Foo!</h1>`。测试写法见[第 21 章](21-testing.md)。
 
 ## 完整代码
 
@@ -508,7 +510,6 @@ where
 }
 ```
 
-> 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,用 `oneshot` 断言 `/greet/Foo` 返回 `<h1>Hello, Foo!</h1>`。测试写法见第 21 章。
 
 ## 动手练习
 

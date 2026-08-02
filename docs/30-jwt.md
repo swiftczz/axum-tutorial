@@ -569,7 +569,7 @@ where
 // ...(其余不变)
 ```
 
-**`impl FromRequestParts for Claims`** 是本章的核心。自定义提取器的套路[第 08 章](08-parse-body-based-on-content-type.md#步骤-2实现-fromrequest)讲过,这里实现的是 `FromRequestParts` 因为只看头部、不碰 body。
+**`impl FromRequestParts for Claims`** 是本章的核心。自定义提取器的套路[第 08 章](08-parse-body-based-on-content-type.md#步骤-2实现-jsonorform)讲过,这里实现的是 `FromRequestParts` 因为只看头部、不碰 body。
 
 **`parts.extract::<TypedHeader<...>>()`** 用了 `RequestPartsExt`([第 10 章](10-customize-extractor-error.md#步骤-2做法一手写-fromrequest)见过)——在自己的提取器里**复用另一个提取器**。这是提取器可组合的体现。
 

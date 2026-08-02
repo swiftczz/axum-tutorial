@@ -108,7 +108,7 @@ let terminate = std::future::pending::<()>();
 
 ### `tokio::select!`:谁先来算谁
 
-[第 34 章](34-websockets.md#tokioselect同时等多件事)用过 `select!` 同时等收发两个方向。这里的用法更简单:
+[第 34 章](34-websockets.md#tokioselect谁先结束就收拾谁)用过 `select!` 同时等收发两个方向。这里的用法更简单:
 
 ```rust
 tokio::select! {

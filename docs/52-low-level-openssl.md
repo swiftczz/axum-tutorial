@@ -290,7 +290,7 @@ use tracing::error;
 error!("error during tls handshake connection from {}: {}", addr, err);
 ```
 
-而[第 50](50-low-level-rustls.md#let--else)、[51 章](51-low-level-native-tls.md)用的是 `let ... else`,**错误值被丢掉了**。[第 50 章的「代价与边界」](50-low-level-rustls.md#代价与边界)专门批评过这一点——**本章的写法才是对的**。
+而[第 50](50-low-level-rustls.md#let-else)、[51 章](51-low-level-native-tls.md)用的是 `let ... else`,**错误值被丢掉了**。[第 50 章的「代价与边界」](50-low-level-rustls.md#代价与边界)专门批评过这一点——**本章的写法才是对的**。
 
 **验证**:
 
@@ -448,7 +448,7 @@ HTTP/1.1 200
 
 **和[第 51 章](51-low-level-native-tls.md#步骤-3第二件不对劲的事协议降级)一样,只有 HTTP/1.1。** 因为示例没有配置 ALPN。
 
-**但和第 51 章有一个关键区别:那一章是"想配也没地方配",这一章是"能配,只是没配"。**
+**但和[第 51 章](51-low-level-native-tls.md)有一个关键区别:那一章是"想配也没地方配",这一章是"能配,只是没配"。**
 
 > **更好的写法**:OpenSSL 完全支持服务端 ALPN,补上即可:
 >

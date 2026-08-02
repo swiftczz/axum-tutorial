@@ -298,7 +298,7 @@ where
 
 **`.fetch_one(&pool)`** 执行并要求恰好一行。相关的还有 `fetch_optional`(0 或 1 行)、`fetch_all`(全部)、`execute`(不关心返回,用于 INSERT/UPDATE)。
 
-**`internal_error` 这个泛型辅助函数**把任意错误转成 `(StatusCode, String)`。[第 15 章](15-anyhow-error-response.md#步骤-3一个泛型-from-让--接住一切)那个泛型 `From` 是同样的思路,只是这里更直接。
+**`internal_error` 这个泛型辅助函数**把任意错误转成 `(StatusCode, String)`。[第 15 章](15-anyhow-error-response.md#步骤-3一个泛型-from-让-接住一切)那个泛型 `From` 是同样的思路,只是这里更直接。
 
 > **更好的写法**:`err.to_string()` 被直接发给了客户端,这会泄露数据库的错误细节——表名、列名、约束名,甚至部分 SQL。[第 14 章](14-error-handling.md#4xx-与-5xx-决定了两件事)讲过 5xx 不该暴露内部信息。正确做法是响应固定文本、详情用 `tracing::error!` 记进日志。示例这么写是为了让你在 curl 里直接看到数据库报了什么错,省去配日志的步骤。
 
@@ -424,7 +424,7 @@ async fn using_connection_extractor(
 // ...(internal_error 不变)
 ```
 
-自定义提取器的套路[第 08 章](08-parse-body-based-on-content-type.md#步骤-2实现-fromrequest)讲过,这里只看新东西。
+自定义提取器的套路[第 08 章](08-parse-body-based-on-content-type.md#步骤-2实现-jsonorform)讲过,这里只看新东西。
 
 **实现的是 `FromRequestParts` 而不是 `FromRequest`。** 因为它根本不看请求体——参数名写成 `_parts` 就是这个意思,连请求信息都不需要。这也意味着它可以和 `Json` 等 body 提取器同时使用,而且不必放最后([第 03 章](03-form.md#提取器axum-的核心机制)讲过这个分类)。
 

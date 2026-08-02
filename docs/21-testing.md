@@ -254,6 +254,8 @@ Hello, World!
 {"data":[1,2,3]}
 ```
 
+> **更好的写法**: 官方示例的 `main` 函数在启动服务器时使用 `axum::serve(listener, app)`，未传入 `.into_make_service_with_connect_info::<SocketAddr>()`，导致生产环境中 `/requires-connect-info` 路由因缺少连接信息而返回 500。虽然测试中可以使用 `MockConnectInfo` 让单元测试通过，但生产服务中必须写为 `axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())`。官方示例保留原样是为了展示单元测试中使用 `MockConnectInfo` 替代真实连接信息的用法，实际项目中请务必保持生产启动代码与 handler 提取器需求一致。
+
 第三条路由现在会失败——`ConnectInfo` 需要 `into_make_service_with_connect_info` 才能工作,而 `main` 里没用:
 
 ```bash
@@ -360,9 +362,9 @@ cargo add http-body-util
 
 **`response.into_body().collect().await.unwrap().to_bytes()`** 读出响应体。这正是[第 09 章](09-consume-body-in-extractor-or-middleware.md#collect-与-bodyext)讲的 `BodyExt::collect`——**测试里读 body 和中间件里读 body 用的是同一套工具**。
 
-**`mime::APPLICATION_JSON.as_ref()`** 比手写 `"application/json"` 好:拼错了编译不过。[第 08 章](08-parse-body-based-on-content-type.md#步骤-2实现-fromrequest)提过用 `mime` crate 正确处理媒体类型。
+**`mime::APPLICATION_JSON.as_ref()`** 比手写 `"application/json"` 好:拼错了编译不过。[第 08 章](08-parse-body-based-on-content-type.md#步骤-2实现-jsonorform)提过用 `mime` crate 正确处理媒体类型。
 
-**`not_found` 那个测试断言 body 是空的。** 这印证了[第 06 章](06-global-404-handler.md#步骤-1先确认默认行为)看到的默认 404 行为——没配 fallback 时 body 为空。**测试在这里起到了"锁定当前行为"的作用**:哪天有人加了 fallback,这个测试会失败,提醒他确认这是有意的改动。
+**`not_found` 那个测试断言 body 是空的。** 这印证了[第 06 章](06-global-404-handler.md#步骤-1一个正常的服务)看到的默认 404 行为——没配 fallback 时 body 为空。**测试在这里起到了"锁定当前行为"的作用**:哪天有人加了 fallback,这个测试会失败,提醒他确认这是有意的改动。
 
 **跑起来看**:
 
@@ -845,7 +847,7 @@ mod tests {
 
 ## 回头补上前面章节的测试
 
-前面十几章的示例里有 11 个带 `#[cfg(test)] mod tests`,当时都按"第 21 章再讲"跳过了。现在你有了全部工具,可以回头把它们读一遍——它们用的都是本章这几种模式:
+全书共有 11 个官方示例包含测试，其中在第 21 章之前涉及 5 个（当时按"第 21 章再讲"跳过了）。现在你有了全部工具,可以回头把它们读一遍——它们用的都是本章这几种模式:
 
 | 章节 | 测试内容 | 用到的手法 |
 |---|---|---|
@@ -875,7 +877,7 @@ mod tests {
 
 `Router` 实现了 `tower::Service`,所以**不启动服务器、不占端口就能对它发请求**。`oneshot` 发一个请求(消耗所有权),`ready().call()` 可以连续发多个。这一层能测到路由匹配、提取器、handler、中间件、响应构造——除 HTTP 协议本身之外的一切,而且是微秒级、可并行、无竞态。
 
-`fn app() -> Router` 这个从第 03 章就出现的模式,价值就在这里:**`main` 和测试共用同一份路由定义**,不会各写一份然后慢慢不一致。
+`fn app() -> Router` 这个从[第 03 章](03-form.md)就出现的模式,价值就在这里:**`main` 和测试共用同一份路由定义**,不会各写一份然后慢慢不一致。
 
 需要真实服务器时(协议层行为、真实客户端、端到端),绑定 `0.0.0.0:0` 让系统分配端口,`tokio::spawn` 丢到后台,测试结束自动清理。`ConnectInfo` 这类依赖真实连接的提取器,用 `MockConnectInfo` 提供测试替身。
 

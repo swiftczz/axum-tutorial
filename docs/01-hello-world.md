@@ -29,11 +29,11 @@ axum 是构建在 tokio 生态之上的,所以 tokio 是必需依赖。
 从底往上看是四层:
 
 - **tokio** — async 运行时和异步 IO(`tokio::net::TcpListener`)
-- **hyper** — HTTP 协议实现,负责报文解析和序列化,也就是你在第 00 章手写的那部分
+- **hyper** — HTTP 协议实现,负责报文解析和序列化,也就是你在[第 00 章](00-web-basics.md)手写的那部分
 - **tower** — 通用的服务抽象层,定义了 `Service` 和 `Layer` 两个 trait,中间件生态建在这上面
 - **axum** — 路由、extractor、响应转换,让你用普通 Rust 函数写业务逻辑
 
-axum 自己不实现 HTTP 协议,它把 hyper 包起来,给你一套好用的 API。这个分层意味着后面遇到需要底层控制的场合(第 44 章 serve-with-hyper、第 50~52 章的底层 TLS),你可以掀开 axum 直接操作 hyper。
+axum 自己不实现 HTTP 协议,它把 hyper 包起来,给你一套好用的 API。这个分层意味着后面遇到需要底层控制的场合([第 44 章](44-serve-with-hyper.md) serve-with-hyper、第 50~52 章的底层 TLS),你可以掀开 axum 直接操作 hyper。
 
 > **本章不深入**:tower 的 `Service` 和 `Layer` 是 axum 中间件体系的地基,日志、压缩、CORS、超时这些能力都靠它。本章还用不到,知道它在分层里的位置就够了。它的组合语义和执行顺序见[第 17 章](17-tracing-aka-logging.md)。
 
@@ -53,7 +53,7 @@ cargo add tokio --features full
 
 `tokio` 的 `full` feature 打开全部功能。生产项目里通常按需精简(比如只要 `rt-multi-thread`、`net`、`macros`),但教程阶段图省事,官方示例也是这么写的。
 
-`axum` 不带 feature 就够本章用了。它的默认 feature 已经包含 `http1`、`json`、`tokio` 等常用项;后面章节需要额外 feature 时会明确说明(比如第 34 章的 `ws`)。
+`axum` 不带 feature 就够本章用了。它的默认 feature 已经包含 `http1`、`json`、`tokio` 等常用项;后面章节需要额外 feature 时会明确说明(比如[第 34 章](34-websockets.md)的 `ws`)。
 
 装完检查一下:
 
@@ -99,15 +99,15 @@ async fn handler() -> &'static str {
 
 `Router` 是 axum 的路由表:记录"什么路径 + 什么方法 → 交给哪个处理器"。`route` 接两个参数,第一个是路径,第二个是 `MethodRouter`。
 
-`get(handler)` 这个调用构造出一个 `MethodRouter`,含义是"`GET` 方法交给 `handler` 处理"。同一路径上如果还要支持 `POST`,可以链式写成 `get(handler).post(other_handler)`——`MethodRouter` 是按方法分发的第二层路由。第 02 章会用到这个特性。
+`get(handler)` 这个调用构造出一个 `MethodRouter`,含义是"`GET` 方法交给 `handler` 处理"。同一路径上如果还要支持 `POST`,可以链式写成 `get(handler).post(other_handler)`——`MethodRouter` 是按方法分发的第二层路由。[第 02 章](02-routes-and-handlers-close-together.md)会用到这个特性。
 
-这里可以对照第 00 章的 `match (method, path)`:axum 把那个手写的两级分发拆成了两层类型——`Router` 管路径,`MethodRouter` 管方法。好处是路径匹配可以用高效的前缀树算法,方法不匹配时能自动返回正确的 `405`,不用你手写。
+这里可以对照[第 00 章](00-web-basics.md)的 `match (method, path)`:axum 把那个手写的两级分发拆成了两层类型——`Router` 管路径,`MethodRouter` 管方法。好处是路径匹配可以用高效的前缀树算法,方法不匹配时能自动返回正确的 `405`,不用你手写。
 
 **`tokio::net::TcpListener::bind(...)`**
 
-和第 00 章的 `std::net::TcpListener::bind` 是同一件事,只是异步版本,所以要 `.await`。第一个 `.unwrap()` 处理绑定失败(最常见的原因是端口被占用)。
+和[第 00 章](00-web-basics.md)的 `std::net::TcpListener::bind` 是同一件事,只是异步版本,所以要 `.await`。第一个 `.unwrap()` 处理绑定失败(最常见的原因是端口被占用)。
 
-注意监听器是你自己创建、自己传给 axum 的,axum 不代你 bind。这个设计让你可以完全控制监听行为——换成 Unix socket(第 53 章)、套一层 TLS(第 32 章)、或者从 systemd 接管已有的 fd,都是替换这一行的事。
+注意监听器是你自己创建、自己传给 axum 的,axum 不代你 bind。这个设计让你可以完全控制监听行为——换成 Unix socket([第 53 章](53-unix-domain-socket.md))、套一层 TLS([第 32 章](32-tls-rustls.md))、或者从 systemd 接管已有的 fd,都是替换这一行的事。
 
 **`axum::serve(listener, app).await.unwrap()`**
 
@@ -148,14 +148,14 @@ date: Thu, 30 Jul 2026 06:12:34 GMT
 Hello, World!
 ```
 
-和第 00 章手写的响应几乎一样,但这次头部是 axum 生成的:
+和[第 00 章](00-web-basics.md)手写的响应几乎一样,但这次头部是 axum 生成的:
 
 - `content-type: text/plain; charset=utf-8` — 你没写这个头部,axum 根据返回类型 `&'static str` 推断出来的
 - `content-length: 13` — 你没算这个数,axum 数的
 - `date` — HTTP 规范建议的头部,hyper 自动加的
 - 头部名是小写的。HTTP 头部名大小写不敏感,HTTP/2 更是要求必须小写,所以 hyper 统一用小写
 
-再试试第 00 章留下的那个遗憾:
+再试试[第 00 章](00-web-basics.md)留下的那个遗憾:
 
 ```bash
 curl -i -X POST http://127.0.0.1:3000/
@@ -168,7 +168,7 @@ content-length: 0
 date: Thu, 30 Jul 2026 06:12:51 GMT
 ```
 
-**`405 Method Not Allowed`,而且带上了 `allow: GET`。** 第 00 章练习题 2 让你手写的逻辑,axum 白送。它知道 `/` 这个路径存在(`Router` 匹配上了),只是 `MethodRouter` 里没有 `POST` 分支,于是给出符合规范的回答。
+**`405 Method Not Allowed`,而且带上了 `allow: GET`。** [第 00 章](00-web-basics.md)练习题 2 让你手写的逻辑,axum 白送。它知道 `/` 这个路径存在(`Router` 匹配上了),只是 `MethodRouter` 里没有 `POST` 分支,于是给出符合规范的回答。
 
 不存在的路径依然是 404:
 
@@ -253,9 +253,9 @@ axum 给大量常用类型实现了它。挑几个和本章相关的:
 | `(StatusCode, T)` | 你给的 | 由 `T` 决定 |
 | `()` | 200 | 无 body |
 
-看这张表,第 00 章手写 `Content-Type` 的活儿去哪了就很清楚了:**它被编码进了返回类型。** 你选 `Html` 就是 `text/html`,选 `Json` 就是 `application/json`。类型系统替你保证了头部和内容的一致性——不会出现"声明了 `application/json` 但 body 是 HTML"这种手写响应时很容易犯的错。
+看这张表,[第 00 章](00-web-basics.md)手写 `Content-Type` 的活儿去哪了就很清楚了:**它被编码进了返回类型。** 你选 `Html` 就是 `text/html`,选 `Json` 就是 `application/json`。类型系统替你保证了头部和内容的一致性——不会出现"声明了 `application/json` 但 body 是 HTML"这种手写响应时很容易犯的错。
 
-`(StatusCode, T)` 这一行值得留意:元组也实现了 `IntoResponse`,这让"改状态码但保留 body"变得很自然,写成 `(StatusCode::CREATED, Json(user))` 就行。第 08 章之后会频繁用到这个组合。
+`(StatusCode, T)` 这一行值得留意:元组也实现了 `IntoResponse`,这让"改状态码但保留 body"变得很自然,写成 `(StatusCode::CREATED, Json(user))` 就行。[第 08 章](08-parse-body-based-on-content-type.md)之后会频繁用到这个组合。
 
 ### 步骤 3:改成返回 HTML
 
@@ -301,7 +301,7 @@ content-length: 22
 
 `content-type` 从 `text/plain` 变成了 `text/html`,`content-length` 也跟着变了。**你只改了返回类型,头部自己跟着对了。**
 
-用浏览器访问 `http://127.0.0.1:3000/`,你会看到一个渲染出来的大标题,而不是标签的原文。这和第 00 章步骤 2 里手动改 `Content-Type` 的效果一致——只是这次是类型系统在替你保证正确性。
+用浏览器访问 `http://127.0.0.1:3000/`,你会看到一个渲染出来的大标题,而不是标签的原文。这和[第 00 章](00-web-basics.md)步骤 2 里手动改 `Content-Type` 的效果一致——只是这次是类型系统在替你保证正确性。
 
 ## 完整代码
 
@@ -340,7 +340,7 @@ async fn handler() -> Html<&'static str> {
 
 ## 小结与下一章预告
 
-axum 的服务由三块拼成:`Router` 记录路由表,handler 是普通的 `async fn`,`axum::serve` 把监听器和路由表接起来。`Handler` trait 让任意"参数可提取、返回值可转换"的异步函数自动成为处理器,`IntoResponse` 则把返回类型翻译成完整的 HTTP 响应——包括你在第 00 章手写过的 `Content-Type` 和 `Content-Length`。
+axum 的服务由三块拼成:`Router` 记录路由表,handler 是普通的 `async fn`,`axum::serve` 把监听器和路由表接起来。`Handler` trait 让任意"参数可提取、返回值可转换"的异步函数自动成为处理器,`IntoResponse` 则把返回类型翻译成完整的 HTTP 响应——包括你在[第 00 章](00-web-basics.md)手写过的 `Content-Type` 和 `Content-Length`。
 
 本章的路由表只有一条,`main` 函数里塞得下。但真实项目有几十上百条路由,全堆在 `main` 里、handler 散落在文件各处,很快就会难以维护。
 

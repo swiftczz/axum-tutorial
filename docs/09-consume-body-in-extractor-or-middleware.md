@@ -180,7 +180,7 @@ fn do_thing_with_request_body(bytes: Bytes) {
 }
 ```
 
-自定义提取器的套路[第 08 章](08-parse-body-based-on-content-type.md#步骤-2实现-fromrequest)讲过,这里只说不同的地方。
+自定义提取器的套路[第 08 章](08-parse-body-based-on-content-type.md#步骤-2实现-jsonorform)讲过,这里只说不同的地方。
 
 **`Bytes::from_request(req, state)`** —— `Bytes` 本身就是个提取器!axum 为它实现了 `FromRequest`,语义是"把整个 body 读成字节,不做任何解析"。所以这个自定义提取器实际上是"委托给 `Bytes`,顺手做点别的"。
 
@@ -364,7 +364,7 @@ curl -X POST http://127.0.0.1:3000/ -d 'hello world'
 
 这类 bug 极其难查:中间件的日志显示数据收到了,业务逻辑却说没数据。如果这个 handler 用的是 `Json<T>` 提取器,你会看到"请求明明发了 JSON,却报 body 为空"这种令人困惑的错误。
 
-**推论:任何消耗 body 的中间件都必须归还。** 这条规则在写日志中间件、审计中间件、签名校验中间件时都要遵守。第 18 章 print-request-response 会展示一个更完整的版本,连响应 body 也一并处理。
+**推论:任何消耗 body 的中间件都必须归还。** 这条规则在写日志中间件、审计中间件、签名校验中间件时都要遵守。[第 18 章](18-print-request-response.md) print-request-response 会展示一个更完整的版本,连响应 body 也一并处理。
 
 改回 `Body::from(bytes)`。
 
@@ -380,7 +380,7 @@ curl -X POST http://127.0.0.1:3000/ -d 'hello world'
 
 什么时候**不该**缓冲整个 body:
 
-- 文件上传 —— 应该边收边写磁盘,见第 40 章 stream-to-file
+- 文件上传 —— 应该边收边写磁盘,见[第 40 章](40-stream-to-file.md) stream-to-file
 - 大文件代理转发 —— 应该流式转发,见第 42、43 章
 - 长连接流式协议 —— WebSocket、SSE 根本不该走这条路
 

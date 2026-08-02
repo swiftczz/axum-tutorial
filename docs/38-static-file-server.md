@@ -77,7 +77,7 @@ ServeDir::new("assets")
     .precompressed_gzip()                     // 优先返回 .gz 文件
 ```
 
-`append_index_html_on_directories` 在[第 33](33-sse.md#步骤-3配上前端页面)、[34](34-websockets.md#步骤-3前端页面)、[36 章](36-websockets-http2.md#步骤-1https--广播通道骨架)都用过——它让 `/` 能返回 `index.html`。
+`append_index_html_on_directories` 在[第 33](33-sse.md#步骤-3配上前端页面)、[34](34-websockets.md#步骤-3前端页面)、[36 章](36-websockets-http2.md#步骤-1https-广播通道骨架)都用过——它让 `/` 能返回 `index.html`。
 
 ### 三种挂载方式:nest_service / fallback_service / route_service
 
@@ -181,6 +181,7 @@ cargo add tower --features util
 cargo add tower-http --features fs,set-status,trace
 cargo add tracing
 cargo add tracing-subscriber --features env-filter
+cargo add --dev http-body-util
 ```
 
 `tower-http` 的三个 feature:`fs` 提供 `ServeDir`/`ServeFile`,`set-status` 提供 `SetStatus`,`trace` 提供 `TraceLayer`。
@@ -834,6 +835,9 @@ fn using_serve_file_from_a_route() -> Router {
     Router::new().route_service("/foo", ServeFile::new("assets/index.html"))
 }
 
+#[cfg(test)]
+mod tests;
+
 async fn serve(app: Router, port: u16) {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
@@ -841,6 +845,39 @@ async fn serve(app: Router, port: u16) {
     axum::serve(listener, app.layer(TraceLayer::new_for_http()))
         .await
         .unwrap();
+}
+```
+
+`src/tests.rs`:
+
+```rust
+use super::using_serve_dir_with_assets_fallback;
+use axum::{body::Body, http::Request, http::StatusCode};
+use http_body_util::BodyExt;
+use tower::ServiceExt;
+
+const INDEX_HTML_CONTENT: &str = include_str!("../assets/index.html");
+
+// `/script.js` at the root is not an asset under `/assets`, so it falls through to the SPA
+// fallback. The fallback serves `index.html` with a 404 status -- the path wasn't found, but
+// the SPA handles routing client-side.
+#[tokio::test]
+async fn assets_not_served_at_root() {
+    let app = using_serve_dir_with_assets_fallback();
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/script.js")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+    assert_eq!(body_str, INDEX_HTML_CONTENT);
 }
 ```
 
@@ -901,6 +938,6 @@ async fn serve(app: Router, port: u16) {
 
 **生产环境通常让 CDN 或 Nginx 处理静态资源** —— 应用内服务的合理场景是小型项目、内部工具、或者需要在提供文件前做权限检查(端口 3006 那个 `oneshot` 用法)。
 
-最后回答开头那个问题:**这一章排在第 38 位,是因为它依赖 tower 的 `Service` 概念(第 17 章)和测试知识(第 21 章)。** 这是本教程"按知识依赖排序"原则的直接代价——读者从第 04 章就想要的功能,要等到这里才讲。
+最后回答开头那个问题:**这一章排在第 38 位,是因为它依赖 tower 的 `Service` 概念([第 17 章](17-tracing-aka-logging.md))和测试知识([第 21 章](21-testing.md))。** 这是本教程"按知识依赖排序"原则的直接代价——读者从[第 04 章](04-templates.md)就想要的功能,要等到这里才讲。
 
 本章的文件都是原样传输的。[第 39 章 compression](39-compression.md) 讲怎么压缩:`CompressionLayer` 如何根据客户端的 `Accept-Encoding` 自动选择算法、`DecompressionLayer` 如何处理压缩的请求体,以及一个和[第 33 章](33-sse.md#代价与边界) SSE 类似的冲突——**压缩中间件会缓冲数据,和流式响应天然不合**。

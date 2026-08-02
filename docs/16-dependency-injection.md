@@ -140,7 +140,7 @@ let app = Router::new()
 
 本章要让两套实现共存于同一个服务,路径必须区分开,所以用 `nest`。
 
-`nest` 是按模块划分路径空间的标准手段,第 23 章 todos 和第 48 章 versioning 都会用到。
+`nest` 是按模块划分路径空间的标准手段,[第 23 章](23-todos.md) todos 和[第 48 章](48-versioning.md) versioning 都会用到。
 
 ## 项目搭建
 

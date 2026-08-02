@@ -41,7 +41,7 @@ axum_server::bind_rustls(addr, config)
 
 这是本章的核心对比:
 
-| | `axum::serve`(第 45 章) | `axum_server`(本章) |
+| | `axum::serve`([第 45 章](45-graceful-shutdown.md)) | `axum_server`(本章) |
 |---|---|---|
 | 写法 | `.with_graceful_shutdown(future)` | `.handle(handle)` + 别处调 `handle.graceful_shutdown(...)` |
 | 谁触发 | **future 完成时自动触发** | **你主动调用方法** |
@@ -168,7 +168,7 @@ echo 'self_signed_certs/*.pem' >> .gitignore
 
 ## 分步构建
 
-### 步骤 1:把第 32 章的 HTTPS 服务搭起来
+### 步骤 1:把[第 32 章](32-tls-rustls.md)的 HTTPS 服务搭起来
 
 **要做什么**:先把不带停机的版本跑通。这一步的代码[第 32 章](32-tls-rustls.md#步骤-1跑起-https-服务)全部讲过,这里只列出来,不再重复解释。
 
@@ -308,7 +308,7 @@ async fn shutdown_signal(handle: axum_server::Handle<SocketAddr>) {
 }
 ```
 
-**前面那一大段和第 45 章逐字相同** —— SIGINT + SIGTERM + `select!` + Windows 的 `pending`。**这段代码是社区标准写法,值得记住。**
+**前面那一大段和[第 45 章](45-graceful-shutdown.md)逐字相同** —— SIGINT + SIGTERM + `select!` + Windows 的 `pending`。**这段代码是社区标准写法,值得记住。**
 
 **新增的两行才是本章的重点:**
 

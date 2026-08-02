@@ -257,7 +257,7 @@ struct Member {
 
 **`run_command(doc! { "ping": 1 })`** 是启动检查,直接发一条原始命令。`ping` 是 MongoDB 的内置命令,不需要任何权限。
 
-**`fn app(client: Client) -> Router`** 这个模式[第 03 章](03-form.md#步骤-1显示表单页面)讲过,为测试服务([第 21 章](21-testing.md#fn-app---router-的价值兑现)兑现了它的价值)。
+**`fn app(client: Client) -> Router`** 这个模式[第 03 章](03-form.md#步骤-1显示表单页面)讲过,为测试服务([第 21 章](21-testing.md#fn-app-router-的价值兑现)兑现了它的价值)。
 
 **`client.database("axum-mongo").collection("members")`** 拿到集合句柄。前置知识讲过它是廉价可克隆的,所以能直接当 `State`。
 

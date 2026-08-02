@@ -59,7 +59,7 @@ Form requests must have `Content-Type: application/x-www-form-urlencoded`
 
 **这两个方法的存在意味着定制工作可以很轻。** 你不需要自己判断"什么错该返回什么状态码"、也不需要重写错误描述——axum 已经算好了,你只要把它们重新包装成自己的格式。三种做法的核心都是这一步。
 
-`JsonRejection` 被标记为 `#[non_exhaustive]`,意思是 axum 保留未来添加新变体的权利。所以你 `match` 它时必须带一个 `_ =>` 兜底分支,否则新版本会编译失败。这个约定在第 11 章会更明显。
+`JsonRejection` 被标记为 `#[non_exhaustive]`,意思是 axum 保留未来添加新变体的权利。所以你 `match` 它时必须带一个 `_ =>` 兜底分支,否则新版本会编译失败。这个约定在[第 11 章](11-customize-path-rejection.md)会更明显。
 
 ### thiserror:定义错误类型的省事办法
 
@@ -91,7 +91,7 @@ pub enum ApiError {
 - `Uri` 给你 `/users/42` —— 实际访问的路径
 - `MatchedPath` 给你 `/users/{id}` —— 匹配上的**路由模式**
 
-写日志和监控指标时后者更有用:`/users/{id}` 只有一个,`/users/42`、`/users/1337` 有无数个。用实际路径做指标标签会产生"高基数"问题,把监控系统撑爆。第 47 章 prometheus-metrics 会正经讲这件事。
+写日志和监控指标时后者更有用:`/users/{id}` 只有一个,`/users/42`、`/users/1337` 有无数个。用实际路径做指标标签会产生"高基数"问题,把监控系统撑爆。[第 47 章](47-prometheus-metrics.md) prometheus-metrics 会正经讲这件事。
 
 `MatchedPath` 是 `FromRequestParts` 类别的提取器,只读元信息。
 

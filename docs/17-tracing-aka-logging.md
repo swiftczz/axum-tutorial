@@ -141,7 +141,7 @@ span 的宏是 `trace_span!`、`debug_span!`、`info_span!` 等,和 event 的宏
 
 ### 那段日志初始化样板
 
-从第 03 章起一直在抄的这段,现在逐块解释:
+从[第 03 章](03-form.md)起一直在抄的这段,现在逐块解释:
 
 ```rust
 tracing_subscriber::registry()

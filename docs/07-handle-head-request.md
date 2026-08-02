@@ -90,7 +90,7 @@ async fn handler(method: Method) -> Response {
 
 > **更好的写法**:示例的头部名叫 `x-some-header`。历史上 `X-` 前缀表示"非标准的自定义头部",但 [RFC 6648](https://www.rfc-editor.org/rfc/rfc6648) 早在 2012 年就建议废弃这个约定——很多 `X-` 头部后来变成了事实标准,前缀反倒成了包袱(`X-Forwarded-For` 就是典型)。现在的建议是**直接用有意义的名字**,不加前缀。示例沿用 `x-` 只是老习惯,你自己命名时不必跟随。
 
-头部名大小写不敏感,axum/hyper 会统一转成小写发出,这点[第 01 章](01-hello-world.md#跑起来看)见过。
+头部名大小写不敏感,axum/hyper 会统一转成小写发出,这点[第 01 章](01-hello-world.md#步骤-1能跑起来的最小服务)见过。
 
 ### 返回类型为什么是 Response
 
@@ -107,7 +107,7 @@ async fn get_head_handler(method: http::Method) -> Response
 
 这是两个不同的类型,用 `impl IntoResponse` 编译不过。解法是两个分支都调用 `.into_response()` 转成统一的 `Response` 类型——`Response` 是 axum 里响应的"擦除类型后"的统一表示。
 
-这个套路很常用:**handler 有多个返回形态时,返回 `Response` 并在每个分支末尾加 `.into_response()`。** 另一种解法是用 `Result<T, E>`([第 05 章](05-templates-minijinja.md#步骤-1布局模板--首页认识-state)用过),但那适合"成功/失败"的二分,不适合本章这种"两种成功形态"。
+这个套路很常用:**handler 有多个返回形态时,返回 `Response` 并在每个分支末尾加 `.into_response()`。** 另一种解法是用 `Result<T, E>`([第 05 章](05-templates-minijinja.md#步骤-1布局模板-首页认识-state)用过),但那适合"成功/失败"的二分,不适合本章这种"两种成功形态"。
 
 ## 项目搭建
 
@@ -304,6 +304,8 @@ if method == http::Method::HEAD {
 
 **这就是本章真正的判断标准:** 手动区分 `HEAD` 只在"生成 body 昂贵、但获知元信息便宜"时才划算。两者成本相当的话,默认行为是更好的选择——代码更少,规范一致性还免费。
 
+> 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,两个测试分别断言 `GET` 返回 `header from GET` 加完整 body、`HEAD` 返回 `header from HEAD` 且 body 为空。测试写法见[第 21 章](21-testing.md)。
+
 ## 完整代码
 
 `src/main.rs`:
@@ -345,7 +347,6 @@ fn do_some_computing_task() {
 }
 ```
 
-> 官方示例的 `main.rs` 末尾还有一个 `#[cfg(test)] mod tests`,两个测试分别断言 `GET` 返回 `header from GET` 加完整 body、`HEAD` 返回 `header from HEAD` 且 body 为空。测试写法见第 21 章。
 
 ## 动手练习
 

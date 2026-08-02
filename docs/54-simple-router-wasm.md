@@ -53,7 +53,7 @@ cargo build --target wasm32-unknown-unknown
 Service<Request<B>>:  Request  →  Response
 ```
 
-[第 17 章](17-tracing-aka-logging.md#towerservice-与-layer)第一次讲 `Service`,[第 21 章](21-testing.md)用 `oneshot` 直接调用它做测试,[第 42 章](42-http-proxy.md#hyper-的-service--tower-的-service)把它塞进 hyper。**这一章只是把这件事说白了:那五步是可选的。**
+[第 17 章](17-tracing-aka-logging.md#towerservice-与-layer)第一次讲 `Service`,[第 21 章](21-testing.md)用 `oneshot` 直接调用它做测试,[第 42 章](42-http-proxy.md#hyper-的-service-tower-的-service)把它塞进 hyper。**这一章只是把这件事说白了:那五步是可选的。**
 
 ### serverless:平台已经替你做了那五步
 
@@ -165,11 +165,11 @@ let response = router.call(request).await.unwrap();
 
 三个细节:
 
-**① `let mut`** —— 因为 tower 的 `Service::call` 取 `&mut self`([第 42 章](42-http-proxy.md#hyper-的-service--tower-的-service)那张表)。
+**① `let mut`** —— 因为 tower 的 `Service::call` 取 `&mut self`([第 42 章](42-http-proxy.md#hyper-的-service-tower-的-service)那张表)。
 
 **② `use tower_service::Service;`** —— `call` 是 trait 方法,trait 必须在作用域里。**忘了这个 import 会得到"方法不存在"的错误**,而不是"trait 未导入"的提示,容易懵。
 
-**③ `.unwrap()`** —— `Router` 的错误类型是 `Infallible`([第 42 章](42-http-proxy.md#match-err消灭-infallible)讲过),所以这个 unwrap 永远不会 panic。更严谨的写法是 `match err {}`。
+**③ `.unwrap()`** —— `Router` 的错误类型是 `Infallible`([第 42 章](42-http-proxy.md#match-err-消灭-infallible)讲过),所以这个 unwrap 永远不会 panic。更严谨的写法是 `match err {}`。
 
 **注意请求体的类型是 `String`,不是 `axum::body::Body`。** `Router` 的 `Service` 实现对请求体类型是泛型的,满足约束的类型都能传。**这一点对 serverless 很重要**——各家平台给你的请求体类型五花八门,不必先转成 axum 自己的 `Body`。真遇到不满足约束的类型,用 `Body::from(...)` 包一层即可。
 
@@ -566,7 +566,7 @@ cargo add lambda_http
 
 把 `main` 换成 `lambda_http::run(app).await`,`cargo lambda watch` 本地跑,`cargo lambda deploy` 部署。**你会发现前 53 章学的路由、提取器、中间件一行都不用改。**
 
-## 小结
+## 小结与下一章预告
 
 **`Router` 本质上只是一个函数:请求进,响应出。** 前 53 章里有 52 章在讲怎么把请求送到它面前——accept 连接、管理连接、跑 HTTP 协议。这一章把那些全删掉,证明了它们是可选的。
 
