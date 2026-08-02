@@ -18,11 +18,11 @@
 ### 请求与响应
 
 - [第 06 章 global-404-handler:兜底处理器](06-global-404-handler.md)
-- [第 07 章 handle-head-request:HEAD 方法处理](07-handle-head-request.md)
-- [第 08 章 parse-body-based-on-content-type:自定义提取器与内容协商](08-parse-body-based-on-content-type.md)
+- [第 07 章 handle-head-request:HEAD 方法与自定义响应头](07-handle-head-request.md)
+- [第 08 章 parse-body-based-on-content-type:自己实现 FromRequest](08-parse-body-based-on-content-type.md)
 - [第 09 章 consume-body-in-extractor-or-middleware:body 只能读一次](09-consume-body-in-extractor-or-middleware.md)
 - [第 10 章 customize-extractor-error:定制提取器错误的三种做法](10-customize-extractor-error.md)
-- [第 11 章 customize-path-rejection:自定义 Path 拒绝响应](11-customize-path-rejection.md)
+- [第 11 章 customize-path-rejection:区分失败原因,分别给出状态码](11-customize-path-rejection.md)
 - [第 12 章 validator:类型对了不等于数据对了](12-validator.md)
 - [第 13 章 multipart-form:文件上传与请求体限制](13-multipart-form.md)
 
@@ -65,12 +65,12 @@
 ### 内容分发与代理
 
 - [第 38 章 static-file-server:静态文件服务](38-static-file-server.md)
-- [第 39 章 compression:请求与响应压缩](39-compression.md)
+- [第 39 章 compression:双向压缩](39-compression.md)
 - [第 40 章 stream-to-file:流式写盘](40-stream-to-file.md)
 - [第 41 章 reqwest-response:把别人的响应转发出去](41-reqwest-response.md)
 - [第 42 章 http-proxy:CONNECT 隧道与连接升级](42-http-proxy.md)
 - [第 43 章 reverse-proxy:改写请求再转发](43-reverse-proxy.md)
-- [第 44 章 serve-with-hyper:把 axum::serve 拆开](44-serve-with-hyper.md)
+- [第 44 章 serve-with-hyper:把 `axum::serve` 拆开](44-serve-with-hyper.md)
 
 ### 生产部署
 

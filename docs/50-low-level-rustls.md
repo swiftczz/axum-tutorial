@@ -334,6 +334,8 @@ fn rustls_server_config(key: impl AsRef<Path>, cert: impl AsRef<Path>) -> Arc<Se
 
 (暂时会有 unused 警告,下一步用上。)
 
+**本步不单独用 curl 验证 HTTPS。** `cargo check`(或 `cargo run`,服务仍是明文 HTTP)能过即可——证书已经读进内存,握手还没插进循环。下一步插入后再用 `curl -k https://[::1]:3000/` 测。
+
 **逐块看:**
 
 **① `PrivateKeyDer::from_pem_file` 和 `CertificateDer::pem_file_iter`**

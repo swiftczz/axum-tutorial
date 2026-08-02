@@ -269,6 +269,22 @@ Hello, World!
 
 **注意传的是 `handle.clone()`。** `Handle` 内部是 `Arc`,克隆出来的和原件指向同一个东西;要留一份给信号处理函数用。
 
+**跑起来看**:
+
+```bash
+cargo run
+```
+
+```bash
+curl -k https://localhost:3000/
+```
+
+```
+Hello, World!
+```
+
+和步骤 1 一样——`Handle` 挂上但没人调用 `graceful_shutdown`,Ctrl-C 仍是立刻退出。下一步写出"按按钮"的那一侧。
+
 ### 步骤 3:按下按钮的那个函数
 
 **要做什么**:写 `shutdown_signal`,它和[第 45 章](45-graceful-shutdown.md#步骤-2写出信号处理函数)那个几乎一样,只是**多了一个参数和最后两行**。
@@ -322,6 +338,8 @@ handle.graceful_shutdown(Some(Duration::from_secs(10)));
 **② `graceful_shutdown` 是同步方法,不是 `.await`。** 它只是设置一个标志位并通知服务器,立刻返回。真正的等待发生在服务器那一侧。所以这个函数**打完日志、按完按钮就返回了**——这一点下一步很关键。
 
 **③ `Handle<SocketAddr>` 带泛型参数。** `axum-server` 0.8 的 `Handle` 是泛型的(参数是连接的地址类型),因为它也支持 Unix 域套接字之类的其他地址。用 TCP 就写 `SocketAddr`。
+
+**本步只加函数,还没挂进 `main`,不单独验证。** 会有 unused 警告属预期;停机行为要等步骤 4 把 `shutdown_signal(handle)` 接上后再测。
 
 ### 步骤 4:重定向服务器 + 共用同一个 future
 

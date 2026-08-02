@@ -699,6 +699,8 @@ async fn main() {
 
 **`fallback_service(ServeDir::new(...))`** 和[第 33 章](33-sse.md#步骤-3配上前端页面)一样,静态文件兜底。
 
+> **本章不深入**:`ServeDir` 来自 `tower-http`,负责把目录映射成 HTTP 路由。这里照抄即可,它的完整用法(路径穿越防护、缓存头部、`fallback` 组合)见[第 38 章](38-static-file-server.md)。
+
 **`DefaultMakeSpan::default().include_headers(true)`** 让 `TraceLayer` 的 span 带上所有请求头部——**对调试 WebSocket 握手特别有用**,能看到 `Upgrade`、`Sec-WebSocket-*` 这些头部到底发过来了没有。
 
 [第 17 章](17-tracing-aka-logging.md#步骤-2自定义-span)讲 `make_span_with` 时用的是自己写闭包,这里用的是 `tower-http` 提供的默认实现加配置。

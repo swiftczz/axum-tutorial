@@ -477,13 +477,35 @@ spawn 的任务被唤醒     →  拿到 upgraded 句柄
 >
 > 代价是客户端要多等一个建连的往返时间才收到 200。真实代理(Squid、Envoy)都是这么做的——**清晰的错误比快 50 毫秒重要**。这和[第 41 章](41-reqwest-response.md)那个「上游失败该回 502 而不是 400」是同一类问题。
 
-### 步骤 4:搬字节
-
-**要做什么**:实现 `tunnel`,连上游 + 双向拷贝。
+上面调用了还没写的 `tunnel`。先放一个空实现,让项目能编译:
 
 ```rust
 use hyper::upgrade::Upgraded;
-use tokio::net::TcpStream;
+
+async fn tunnel(_upgraded: Upgraded, _addr: String) -> std::io::Result<()> {
+    // 下一步实现
+    Ok(())
+}
+```
+
+**跑起来看**:
+
+```bash
+cargo run
+```
+
+```bash
+curl -v -x "127.0.0.1:3000" https://tokio.rs
+```
+
+表现和步骤 2 末尾类似:客户端仍会看到 `CONNECT tunnel established`,随后 TLS 失败或卡住——升级已经发起,但 `tunnel` 空跑,字节还没开始搬。下一步把空实现换成真正的双向拷贝。
+
+### 步骤 4:搬字节
+
+**要做什么**:把上一步的空 `tunnel` 换成连上游 + 双向拷贝。
+
+```rust
+use tokio::net::TcpStream;   // Upgraded 上一步已引入
 ```
 
 ```rust

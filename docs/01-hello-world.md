@@ -230,7 +230,7 @@ where
 
 参数的部分要求实现 `FromRequest`,那就是**提取器**(extractor)机制——从请求里按类型取出你要的东西。本章的 handler 没有参数所以没用上,从[第 03 章](03-form.md)开始它会成为主角。
 
-顺带说个实用推论:当你写的 handler 报出一长串看不懂的 trait bound 错误,十有八九是某个参数没实现 `FromRequest`,或者返回类型没实现 `IntoResponse`。axum 还提供了 `#[debug_handler]` 宏专门用来把这类错误变得可读,后面章节会用到。
+顺带说个实用推论:当你写的 handler 报出一长串看不懂的 trait bound 错误,十有八九是某个参数没实现 `FromRequest`,或者返回类型没实现 `IntoResponse`。axum 还提供了 `#[debug_handler]` 宏(需要 `macros` feature)专门用来把这类错误变得可读——[第 15 章](15-anyhow-error-response.md)碰到签名不匹配时会再见到编译器对它的提示。
 
 #### IntoResponse:返回值如何变成 HTTP 响应
 
@@ -256,6 +256,8 @@ axum 给大量常用类型实现了它。挑几个和本章相关的:
 看这张表,[第 00 章](00-web-basics.md)手写 `Content-Type` 的活儿去哪了就很清楚了:**它被编码进了返回类型。** 你选 `Html` 就是 `text/html`,选 `Json` 就是 `application/json`。类型系统替你保证了头部和内容的一致性——不会出现"声明了 `application/json` 但 body 是 HTML"这种手写响应时很容易犯的错。
 
 `(StatusCode, T)` 这一行值得留意:元组也实现了 `IntoResponse`,这让"改状态码但保留 body"变得很自然,写成 `(StatusCode::CREATED, Json(user))` 就行。[第 08 章](08-parse-body-based-on-content-type.md)之后会频繁用到这个组合。
+
+**本步不改代码,不单独验证。** 步骤 1 已经跑通;`Handler` / `IntoResponse` 的效果下一步改返回类型时用 `curl -i` 对照就能看见。
 
 ### 步骤 3:改成返回 HTML
 

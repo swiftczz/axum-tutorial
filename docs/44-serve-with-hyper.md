@@ -394,7 +394,15 @@ failed to serve connection: invalid HTTP method parsed
 
 (需要 `use axum::extract::ConnectInfo;`)
 
-**现象**:能编译、能运行,但请求会得到:
+**跑起来看**:
+
+```bash
+cargo run
+```
+
+```bash
+curl -i http://127.0.0.1:3000/
+```
 
 ```
 HTTP/1.1 500 Internal Server Error
@@ -408,7 +416,7 @@ Missing request extension: Extension of type `axum::extract::connect_info::Conne
 
 **这一步的意义在于:很多人第一次用 `ConnectInfo` 就撞上这个 500,然后不明白为什么。现在你明白了——缺的不是提取器,是上游那一层。**
 
-把路由改回 `get(|| async { "Hello!" })`,下一步在**另一个函数**里正确地实现它。
+**改回** `get(|| async { "Hello!" })`,下一步在**另一个函数**里正确地实现它。
 
 ### 步骤 4:用 MakeService 注入客户端地址
 
@@ -495,6 +503,8 @@ fn unwrap_infallible<T>(result: Result<T, Infallible>) -> T {
 `oneshot` = `poll_ready` + `call` 打包。前置知识里说过 `Router` 永远就绪所以 `call` 也行;这里用 `oneshot` 是**更规范的写法**——如果将来在 Router 外面套了带背压的层,`oneshot` 会自动处理,`call` 则会违约。
 
 > **更好的写法**:两个函数里 `serve_plain` 用 `.call()`、`serve_with_connect_info` 用 `.oneshot()`,**同一份代码里两种风格并存**,官方示例应该是想展示两种都可以。实际项目里**统一用 `.oneshot()`** 更稳妥:它在 `Router` 上和 `.call()` 等价(零额外成本),但在套了 `tower` 中间件之后是唯一正确的做法。
+
+**本步只写函数,还不改 `main`。** 现在 `serve_with_connect_info` 还没人调用,单独 `cargo run` 仍只有 3000 端口——与步骤 5 一起验证。
 
 ### 步骤 5:两个服务一起跑
 
@@ -589,11 +599,23 @@ async fn serve_with_connect_info() {
 }
 ```
 
-**跑一遍,两个端口的行为和手写版一模一样**,包括 `--http2-prior-knowledge`。
+**跑起来看**(临时换成上面两段,验证完改回步骤 4 / 5 的手写循环——章末完整代码保留手写版):
+
+```bash
+cargo run
+```
+
+```bash
+curl -i http://127.0.0.1:3000/
+curl -i http://127.0.0.1:3001/
+curl -i --http2-prior-knowledge http://127.0.0.1:3000/
+```
+
+两个端口的行为和手写版一模一样,包括 HTTP/2。
 
 **注意第二个:`axum::serve` 的第二个参数就是那个 MakeService。** 这也解释了为什么 `axum::serve` 能同时接受 `app` 和 `app.into_make_service_with_connect_info::<SocketAddr>()` —— 它接受的是"能为一条连接产出 Service 的东西",`Router` 自己也满足(通过一个忽略连接信息的 blanket 实现)。
 
-**看完这个对照再回头看步骤 1 和 4 的三十行,你就知道那三十行值不值得写了。** 大多数时候不值得。
+**看完这个对照再回头看步骤 1 和 4 的三十行,你就知道那三十行值不值得写了。** 大多数时候不值得。**验证完把两个函数改回手写循环。**
 
 ## 完整代码
 

@@ -401,7 +401,7 @@ if content_type.starts_with("application/json") {
 > if mime.type_() == mime::APPLICATION && mime.subtype() == mime::JSON { /* ... */ }
 > ```
 >
-> 示例用 `starts_with` 是为了不引入额外依赖、让判断逻辑一眼可读——这一章的重点是 `FromRequest` 的实现结构,不是 MIME 解析。练习题 3 会让你换成 `mime`。
+> 示例用 `starts_with` 是为了不引入额外依赖、让判断逻辑一眼可读——这一章的重点是 `FromRequest` 的实现结构,不是 MIME 解析。练习题 4 会让你换成 `mime`。
 
 **复用内置提取器:**
 
@@ -567,10 +567,6 @@ Failed to deserialize the JSON body into the target type: missing field `foo` at
 
 **这张表说明了 `Rejection = Response` 的价值:** 三种来源、三种状态码、三种 body 格式,全都塞进了同一个 `Response` 类型里。要是把 `Rejection` 定成 `(StatusCode, String)`,就得手工把内置拒绝的状态码和文本拆出来重新组装——不但麻烦,还容易丢信息。
 
-代价也在这张表里:客户端拿到的错误格式**不统一**。`415` 是空 body,`400`/`422` 是纯文本。如果这是个正经 API,前端会希望所有错误都是同一种 JSON 结构。
-
-统一错误格式正是下面几章的主题:[第 10 章](10-customize-extractor-error.md) 展示三种把提取器拒绝改成统一 JSON 的办法,[第 14 章](14-error-handling.md) 讲整个应用层面的错误处理设计。
-
 ## 完整代码
 
 `src/main.rs`:
@@ -646,6 +642,16 @@ where
     }
 }
 ```
+
+## 代价与边界
+
+手写 `FromRequest` 换来的是灵活性,也把几件事交到你手里——官方内置提取器已经替你挡住的坑,现在要自己看着。
+
+**错误格式不统一。** 步骤 4 那张表已经写明:`415` 是空 body,`400`/`422` 是纯文本。正经 API 通常希望所有错误都是同一种 JSON 结构。统一错误格式是下面几章的主题:[第 10 章](10-customize-extractor-error.md) 展示三种把提取器拒绝改成统一 JSON 的办法,[第 14 章](14-error-handling.md) 讲整个应用层面的错误处理设计。
+
+**`starts_with` 不是 MIME 解析。** 步骤 3 的「更好的写法」说过:它会误判 `application/jsonx`,也会漏判合法的大写 `Application/JSON`。演示 `FromRequest` 结构时够用,上线前应换成 `mime` 或等价解析(练习题 4)。
+
+**什么时候值得自己写。** 同一条路由要同时吃 JSON 和表单、或者要在提取阶段掺进业务上下文时,手写提取器是对的路。只是想换错误 JSON 外壳,别从这一章起步——直接看[第 10 章](10-customize-extractor-error.md) 的派生宏做法,代码量小一个数量级。
 
 ## 动手练习
 

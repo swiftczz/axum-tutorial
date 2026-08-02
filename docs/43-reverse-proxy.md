@@ -318,6 +318,18 @@ async fn handler(State(client): State<Client>, req: Request) -> Result<Response,
 
 **`State` 必须排在 `Request` 前面。** 上一步说过,`Request` 只能在最后。
 
+**跑起来看**:
+
+```bash
+cargo run
+```
+
+```bash
+curl -i http://127.0.0.1:4000/
+```
+
+仍是 `501 Not Implemented`——客户端已经进共享状态,handler 还没真正转发。能编译、行为与步骤 2 一致,说明 `with_state` 挂对了。下一步填转发逻辑。
+
 ### 步骤 4:改写 URI,发出去
 
 **要做什么**:实现真正的转发。
