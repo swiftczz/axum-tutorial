@@ -72,7 +72,7 @@ let handle = axum_server::Handle::new();
 
 **`listening()` 在测试里特别有用**:绑 `0.0.0.0:0` 让系统分配端口,然后 `handle.listening().await` 拿到真实端口。[第 21 章](21-testing.md)那种 `oneshot` 测法用不上,但需要真起一个服务器的集成测试就靠它。
 
- **`graceful_shutdown(None)` 和[第 45 章](45-graceful-shutdown.md#步骤-4故意不加超时看看会卡成什么样)那个坑是同一个** —— 一个永不结束的请求会让进程永远退不出。**默认就该传 `Some(...)`。**
+**`graceful_shutdown(None)` 和[第 45 章](45-graceful-shutdown.md#步骤-4故意不加超时看看会卡成什么样)那个坑是同一个** —— 一个永不结束的请求会让进程永远退不出。**默认就该传 `Some(...)`。**
 
 ### 一个 future,两个服务器
 
@@ -101,7 +101,7 @@ tokio::spawn(redirect_http_to_https(ports, shutdown_future));
 
 **一个 future 顺序触发了两套完全不同的停机机制**,而且顺序是确定的(HTTPS 先,HTTP 后)。
 
- **但这个写法有个不小的隐患:HTTPS 服务器的停机,依赖于那个被注释成 "optional" 的重定向服务器。** 因为 `async fn` 调用只是**创建** future,不执行任何代码——**没有人 `.await` 它,里面的信号监听就永远不会开始**。步骤 5 会亲手演示删掉那行 `spawn` 之后会发生什么。
+**但这个写法有个不小的隐患:HTTPS 服务器的停机,依赖于那个被注释成 "optional" 的重定向服务器。** 因为 `async fn` 调用只是**创建** future,不执行任何代码——**没有人 `.await` 它,里面的信号监听就永远不会开始**。步骤 5 会亲手演示删掉那行 `spawn` 之后会发生什么。
 
 ### 泛型的 future 参数
 
@@ -267,7 +267,7 @@ Hello, World!
 
 **`.handle(...)` 插在 `bind_rustls` 和 `serve` 之间。** 这一步之后服务器行为完全不变——遥控器交出去了,但还没人按按钮。
 
-**注意传的是 `handle.clone()`。** `Handle` 内部是 `Arc`,克隆出来的和原件指向同一个东西;我们要留一份给信号处理函数用。
+**注意传的是 `handle.clone()`。** `Handle` 内部是 `Arc`,克隆出来的和原件指向同一个东西;要留一份给信号处理函数用。
 
 ### 步骤 3:按下按钮的那个函数
 
@@ -679,7 +679,7 @@ where
 
 **2. 加上 `TimeoutLayer`,让超时时返回 408 而不是断连。**
 
-提示:`cargo add tower-http --features timeout`,给 `app` 加 `.layer(TimeoutLayer::new(Duration::from_secs(5)))`,注意**它要比 `graceful_shutdown` 的 10 秒短**。用一个 30 秒的慢 handler 验证:Ctrl-C 后 5 秒拿到 408,而不是等 10 秒后被掐断。
+提示:`cargo add tower-http --features timeout`,给 `app` 加 `.layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(5)))`(需要 `use axum::http::StatusCode;`),注意**它要比 `graceful_shutdown` 的 10 秒短**。用一个 30 秒的慢 handler 验证:Ctrl-C 后 5 秒拿到 408,而不是等 10 秒后被掐断。
 
 **3. 加一个管理端点触发停机。**
 

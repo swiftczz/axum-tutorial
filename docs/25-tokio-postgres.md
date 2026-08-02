@@ -171,11 +171,15 @@ docker run --name axum-tutorial-pg \
   -d postgres:16
 ```
 
-**官方示例的连接串没有密码**,而容器要求密码认证,所以直接跑会失败:
+**官方示例的连接串没有密码**,而容器要求密码认证——不过 `Pool::builder().build()` 是**懒连接**:启动时不会去连,报错要等第一次请求:
 
 ```
-Error: Db(DbError { severity: "FATAL", code: SqlState(E28P01), message: "password authentication failed for user \"postgres\"" })
+HTTP/1.1 500 Internal Server Error
+
+password authentication failed for user "postgres"
 ```
+
+`internal_error` 把 `tokio_postgres::Error` 的 `Display` 文本放进了响应体。
 
 两种处理方式:
 
@@ -609,7 +613,7 @@ where
 
 **3. 把 `try_get` 的类型故意写错,再用 sqlx 的宏对比。**
 
-提示:本章步骤 1 演示过运行时失败。如果你还留着[第 24 章](24-sqlx-postgres.md)的项目,把那边的 `query_scalar` 换成 `query_scalar!`(带感叹号),故意写错类型,看编译器怎么说。**这个对比能让你直观感受到编译期校验值多少钱。** 注意用宏需要设置 `DATABASE_URL` 环境变量让编译时能连上数据库。
+提示:本章步骤 1 演示过运行时失败。如果你还留着[第 24 章](24-sqlx-postgres.md)的项目,先 `cargo add sqlx --features macros`,再把那边的 `query_scalar` 换成 `query_scalar!`(带感叹号),故意写错类型,看编译器怎么说。**这个对比能让你直观感受到编译期校验值多少钱。** 注意用宏需要设置 `DATABASE_URL` 环境变量让编译时能连上数据库。
 
 ## 小结与下一章预告
 

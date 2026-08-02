@@ -254,7 +254,7 @@ Hello, World!
 {"data":[1,2,3]}
 ```
 
-> **更好的写法**: 官方示例的 `main` 函数在启动服务器时使用 `axum::serve(listener, app)`，未传入 `.into_make_service_with_connect_info::<SocketAddr>()`，导致生产环境中 `/requires-connect-info` 路由因缺少连接信息而返回 500。虽然测试中可以使用 `MockConnectInfo` 让单元测试通过，但生产服务中必须写为 `axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())`。官方示例保留原样是为了展示单元测试中使用 `MockConnectInfo` 替代真实连接信息的用法，实际项目中请务必保持生产启动代码与 handler 提取器需求一致。
+> **更好的写法**:官方示例的 `main` 函数在启动服务器时使用 `axum::serve(listener, app)`,未传入 `.into_make_service_with_connect_info::<SocketAddr>()`,导致生产环境中 `/requires-connect-info` 路由因缺少连接信息而返回 500。虽然测试中可以使用 `MockConnectInfo` 让单元测试通过,但生产服务中必须写为 `axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())`。官方示例保留原样是为了展示单元测试中使用 `MockConnectInfo` 替代真实连接信息的用法,实际项目中请务必保持生产启动代码与 handler 提取器需求一致。
 
 第三条路由现在会失败——`ConnectInfo` 需要 `into_make_service_with_connect_info` 才能工作,而 `main` 里没用:
 
@@ -845,7 +845,7 @@ mod tests {
 
 **测试替身可能掩盖真实问题。** `MockConnectInfo` 让测试通过了,但它验证不了"生产环境真的调用了 `into_make_service_with_connect_info`"——本章示例的 `main` 其实就没调用,那条路由在生产环境是坏的(步骤 1 里 curl 到的 500)。**测试绿了不等于功能可用**,这是个很好的反面案例。
 
-## 回头补上前面章节的测试
+### 回头补上前面章节的测试
 
 全书共有 11 个官方示例包含测试，其中在第 21 章之前涉及 5 个（当时按"第 21 章再讲"跳过了）。现在你有了全部工具,可以回头把它们读一遍——它们用的都是本章这几种模式:
 

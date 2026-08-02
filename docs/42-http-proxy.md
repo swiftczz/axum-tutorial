@@ -194,7 +194,7 @@ cargo add tracing
 cargo add tracing-subscriber --features env-filter
 ```
 
-这是本教程第一次**直接依赖 hyper**。前面 41 章里 hyper 一直是 axum 的间接依赖,轮不到我们直接调用。
+这是本教程第一次**直接依赖 hyper**。前面 41 章里 hyper 一直是 axum 的间接依赖,轮不到直接调用。
 
 - `hyper` 的 `full` feature 带上 `server`、`http1`、`client` 等全部能力
 - `hyper-util` 提供 `TokioIo`(桥接 hyper 和 tokio 的 IO trait)
@@ -269,7 +269,7 @@ async fn main() {
 
 ```
 hyper::service::service_fn   ← hyper 认这个
-    └─ tower::service_fn     ← 我们的分流逻辑写在这里
+    └─ tower::service_fn     ← 分流逻辑写在这里
            └─ Router         ← axum 的路由
 ```
 
@@ -277,7 +277,7 @@ hyper::service::service_fn   ← hyper 认这个
 
 **② `req.map(Body::new)`**
 
-hyper 交给我们的是 `Request<Incoming>`(`Incoming` 是 hyper 的 body 类型),而 `Router` 要的是 `Request<axum::body::Body>`。`Request::map` 只换 body、保留其他部分,`Body::new` 做类型包装。
+hyper 交出的是 `Request<Incoming>`(`Incoming` 是 hyper 的 body 类型),而 `Router` 要的是 `Request<axum::body::Body>`。`Request::map` 只换 body、保留其他部分,`Body::new` 做类型包装。
 
 **③ `router_svc.oneshot(req)`**
 
@@ -404,7 +404,7 @@ curl 的输出里能看到:
 * ... TLS handshake ...
 ```
 
-然后**卡住或者报 TLS 错误**——因为我们回了 200 说隧道建好了,实际上什么都没建。
+然后**卡住或者报 TLS 错误**——因为服务回了 200 说隧道建好了,实际上什么都没建。
 
 服务端日志里能看到 `tracing::trace!(?req)` 打出的请求,URI 是 `tokio.rs:443`,method 是 `CONNECT`。**分流成功了。**
 
@@ -519,7 +519,7 @@ b 读到的 → 写给 a
 
 它比自己写两个 `tokio::io::copy` 再 `join` 好在:正确处理了半关闭(一方 `shutdown` 写端但还在读)、内部有缓冲、并且会在拷贝结束时 flush 并 shutdown 对端写端。
 
-**注意 `upgraded` 里流动的是什么**:TLS 握手报文、加密的 HTTP 请求和响应。**我们的代码完全不 care**,它看到的只是 `&[u8]`。这就是隧道的本质。
+**注意 `upgraded` 里流动的是什么**:TLS 握手报文、加密的 HTTP 请求和响应。**代码完全不 care**,它看到的只是 `&[u8]`。这就是隧道的本质。
 
 **跑起来看**:
 
@@ -561,10 +561,10 @@ curl -v -x "127.0.0.1:3000" https://tokio.rs
 **逐段读一下这个输出,整章的知识点全在里面:**
 
 - `CONNECT tokio.rs:443` —— authority-form 请求目标
-- `HTTP/1.1 200 OK` —— 隧道建立(不是 tokio.rs 返回的,是**我们的服务**返回的)
-- `TLS handshake` —— **在隧道里**握手,我们的代理看不懂
+- `HTTP/1.1 200 OK` —— 隧道建立(不是 tokio.rs 返回的,是**服务**返回的)
+- `TLS handshake` —— **在隧道里**握手,代理看不懂
 - `Server certificate: CN=tokio.rs` —— **证书是 tokio.rs 的**,证明没有中间人
-- `GET / HTTP/2` —— 隧道里跑的是 HTTP/2,我们的代理更看不懂了
+- `GET / HTTP/2` —— 隧道里跑的是 HTTP/2,代理更看不懂了
 
 服务端日志:
 
@@ -757,7 +757,7 @@ async fn tunnel(upgraded: Upgraded, addr: String) -> std::io::Result<()> {
 
 ## 代价与边界
 
-** 这是一个开放代理,绝对不能部署到公网。** 这条要单独列在最前面,因为它的危害远超其他所有问题:
+**这是一个开放代理,绝对不能部署到公网。** 这条要单独列在最前面,因为它的危害远超其他所有问题:
 
 - **任何人都能用它连任何地址。** `tunnel()` 拿到 `host_addr` 就直接 `TcpStream::connect`,**没有任何白名单、认证、限流**。
 - **SSRF(服务端请求伪造)。** 攻击者可以 `CONNECT 169.254.169.254:80`(云厂商的元数据服务)偷取你的实例凭证,或者 `CONNECT 10.0.0.5:6379` 直连你内网的 Redis。**代理在你的内网里,而攻击者在外面。**

@@ -220,6 +220,8 @@ cargo add tracing-subscriber --features env-filter
 
 **要做什么**:用内置的 `Json` 提取器做一个只收 JSON 的接口,作为对照起点。
 
+日志初始化样板的作用见[第 03 章](03-form.md#步骤-1显示表单页面),照抄即可。
+
 ```rust
 // src/main.rs
 use axum::{routing::post, Json, Router};

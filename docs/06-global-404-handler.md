@@ -120,6 +120,8 @@ cargo add tracing-subscriber --features env-filter
 
 **要做什么**:先把[第 01 章](01-hello-world.md)那个服务重建一遍,确认默认 `404` 的行为。
 
+日志初始化样板的作用见[第 03 章](03-form.md#步骤-1显示表单页面),照抄即可。
+
 ```rust
 // src/main.rs
 use axum::{response::Html, routing::get, Router};

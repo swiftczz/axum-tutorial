@@ -107,26 +107,50 @@ cargo add anyhow
 
 ## 分步构建
 
-### 步骤 1:为什么不能直接返回 anyhow::Error
+### 步骤 1:包一个 newtype,实现 IntoResponse 和 From
 
-**要做什么**:看看直接返回 `anyhow::Error` 为什么不行，以及如何通过 `AppError` newtype 包装解决。
+**要做什么**:定义 `AppError` 包住 `anyhow::Error`,让 handler 能返回 `Result<(), AppError>`,并跑起来看效果。
 
-如果在 handler 里直接写 `async fn handler() -> Result<(), anyhow::Error>`,你会收到一条编译器报错:
+先试一下直接返回 `anyhow::Error` 会怎样。**临时**把 handler 写成下面的样子(连同 `get(handler)` 注册一起):
+
+```rust
+// src/main.rs —— 临时改动,看完报错就改回
+use axum::{routing::get, Router};
+
+async fn handler() -> Result<(), anyhow::Error> {
+    Ok(())
+}
+
+fn app() -> Router {
+    Router::new().route("/", get(handler))
+}
+```
+
+`cargo check` 会得到:
 
 ```
 error[E0277]: the trait bound `fn() -> ... {handler}: Handler<_, _>` is not satisfied
    |
    |     Router::new().route("/", get(handler))
    |                              --- ^^^^^^^ the trait `Handler<_, _>` is not implemented
+   |
+   = note: Consider using `#[axum::debug_handler]` to improve the error message
 ```
 
-**这段报错的原因**:[第 01 章](01-hello-world.md#handler为什么普通函数能当处理器)讲过,handler 的返回值必须实现 `IntoResponse`。第三方 crate 里的 `anyhow::Error` 没有也不可能为 axum 实现 `IntoResponse`(Rust 的 orphan rule 限制)。
+**这段报错不好读**,它只说 `handler` 不满足 `Handler` trait,没直说是为什么。[第 01 章](01-hello-world.md#handler为什么普通函数能当处理器)讲过:`Handler` 的实现要求"参数能提取、返回值能转成响应"。这里参数没问题,所以问题在返回值——`Result<(), anyhow::Error>` 里的 `anyhow::Error` 没有实现 `IntoResponse`。`anyhow` 是第三方 crate,受 orphan rule 限制,它不可能为 axum 补这个实现。
 
-解决办法是**定义一个 Newtype 包住 `anyhow::Error`,并为它实现 `IntoResponse` 和泛型 `From`**:
+编译器的提示值得记住:**`#[axum::debug_handler]` 能让这类错误变得可读**。给 handler 加上这个属性宏(需要 `axum` 的 `macros` feature),它会生成更精确的诊断,直接指出是哪个参数或返回值不满足要求。调试 handler 签名问题时这是第一手段。
+
+现在改回 `Result<(), AppError>`,一次性写出 `AppError` 的三件套:
 
 ```rust
 // src/main.rs
-use axum::{routing::get, Router};
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::get,
+    Router,
+};
 
 #[tokio::main]
 async fn main() {
@@ -143,56 +167,6 @@ fn app() -> Router {
     Router::new().route("/", get(handler))
 }
 
-// 这一步故意写错,下一步修
-async fn handler() -> Result<(), anyhow::Error> {
-    try_thing()?;
-    Ok(())
-}
-
-fn try_thing() -> Result<(), anyhow::Error> {
-    anyhow::bail!("it failed!")
-}
-```
-
-`try_thing` 模拟一个会失败的内部函数,`bail!` 直接返回错误。
-
-**跑起来看**:
-
-```bash
-cargo run
-```
-
-编译失败:
-
-```
-error[E0277]: the trait bound `fn() -> ... {handler}: Handler<_, _>` is not satisfied
-   |
-   |     Router::new().route("/", get(handler))
-   |                              --- ^^^^^^^ the trait `Handler<_, _>` is not implemented
-   |
-   = note: Consider using `#[axum::debug_handler]` to improve the error message
-```
-
-**这段报错不好读**,它只说 `handler` 不满足 `Handler` trait,没直说是为什么。[第 01 章](01-hello-world.md#handler为什么普通函数能当处理器)讲过:`Handler` 的实现要求"参数能提取、返回值能转成响应"。这里参数没问题,所以问题在返回值——`Result<(), anyhow::Error>` 里的 `anyhow::Error` 没有实现 `IntoResponse`。
-
-编译器的提示值得记住:**`#[axum::debug_handler]` 能让这类错误变得可读**。给 handler 加上这个属性宏(需要 `axum` 的 `macros` feature),它会生成更精确的诊断,直接指出是哪个参数或返回值不满足要求。调试 handler 签名问题时这是第一手段。
-
-### 步骤 2:包一个 newtype 并实现 IntoResponse
-
-**要做什么**:定义 `AppError` 包住 `anyhow::Error`,给它实现 `IntoResponse`。
-
-```rust
-// src/main.rs
-use axum::{
-    http::StatusCode,                                    // 新增
-    response::{IntoResponse, Response},                  // 新增
-    routing::get,
-    Router,
-};
-
-// ...(main 和 app 不变)
-
-// 改动:错误类型换成 AppError
 async fn handler() -> Result<(), AppError> {
     try_thing()?;
     Ok(())
@@ -202,10 +176,10 @@ fn try_thing() -> Result<(), anyhow::Error> {
     anyhow::bail!("it failed!")
 }
 
-// 新增:Make our own error that wraps `anyhow::Error`.
+// Make our own error that wraps `anyhow::Error`.
 struct AppError(anyhow::Error);
 
-// 新增:Tell axum how to convert `AppError` into a response.
+// Tell axum how to convert `AppError` into a response.
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         (
@@ -215,25 +189,8 @@ impl IntoResponse for AppError {
             .into_response()
     }
 }
-```
 
-现在还编译不过,但错误变了——`try_thing()?` 那一行报错,因为 `?` 不知道怎么把 `anyhow::Error` 变成 `AppError`。下一步补上。
-
-先看 `into_response` 做了什么:固定返回 `500` 加一句带错误描述的文本。这是[第 06 章](06-global-404-handler.md#元组作为返回类型)讲的元组返回。
-
-**注意 `{}` 用的是 `Display` 格式**,只打印最外层的错误消息("it failed!"),不含 `Caused by` 链。这里是有意的——[第 14 章](14-error-handling.md#4xx-与-5xx-决定了两件事)讲过,返回给客户端的 5xx 信息应该尽量少。
-
-> **更好的写法**:示例把实际的错误描述拼进了响应体,这和[第 14 章](14-error-handling.md#4xx-与-5xx-决定了两件事)"5xx 只回一句 Something went wrong"的原则相冲突——错误文本常常泄露文件路径、数据库表名、内部服务地址。正确做法是响应固定文本、详情记进日志。示例这么写纯粹是为了让你在 curl 里能看到效果,别照搬。练习题 1 会让你改。
-
-### 步骤 3:一个泛型 From 让 ? 接住一切
-
-**要做什么**:补上让 `?` 工作的转换。
-
-```rust
-// src/main.rs
-// ...(前面不变)
-
-// 新增:This enables using `?` on functions that return `Result<_, anyhow::Error>` to turn them into
+// This enables using `?` on functions that return `Result<_, anyhow::Error>` to turn them into
 // `Result<_, AppError>`. That way you don't need to do that manually.
 impl<E> From<E> for AppError
 where
@@ -244,6 +201,40 @@ where
     }
 }
 ```
+
+一个 newtype,两个 impl。`AppError(anyhow::Error)` 把 `anyhow::Error` 包进自己的类型;`IntoResponse` 让它能当 handler 的返回类型;泛型 `From` 让 `try_thing()?` 里的 `?` 能把 `anyhow::Error` 自动转成 `AppError`。三个缺一个都编译不过——缺 `From` 时,报错会落在 `try_thing()?` 那一行,提示"无法把 `anyhow::Error` 转成 `AppError`"。
+
+**跑起来看**:
+
+```bash
+cargo run
+```
+
+```
+listening on 127.0.0.1:3000
+```
+
+```bash
+curl -i http://127.0.0.1:3000/
+```
+
+```
+HTTP/1.1 500 Internal Server Error
+content-type: text/plain; charset=utf-8
+content-length: 32
+
+Something went wrong: it failed!
+```
+
+`500`,而且带上了 `bail!` 里那句消息。`into_response` 里用的是[第 06 章](06-global-404-handler.md#元组作为返回类型)讲的元组返回:固定 `500` 加一句带错误描述的文本。
+
+**注意 `{}` 用的是 `Display` 格式**,只打印最外层的错误消息("it failed!"),不含 `Caused by` 链。这里是有意的——[第 14 章](14-error-handling.md#4xx-与-5xx-决定了两件事)讲过,返回给客户端的 5xx 信息应该尽量少。
+
+> **更好的写法**:示例把实际的错误描述拼进了响应体,这和[第 14 章](14-error-handling.md#4xx-与-5xx-决定了两件事)"5xx 只回一句 Something went wrong"的原则相冲突——错误文本常常泄露文件路径、数据库表名、内部服务地址。正确做法是响应固定文本、详情记进日志。示例这么写纯粹是为了让你在 curl 里能看到效果,别照搬。练习题 1 会让你改。
+
+### 步骤 2:泛型 From 为什么值这五行
+
+**要做什么**:拆解泛型 `From` 的设计,并亲手验证"任何标准错误类型都能通过 `?` 变成 `AppError`"。
 
 **这五行是本章的精华。**
 

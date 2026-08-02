@@ -51,7 +51,7 @@ println!("{}", res.status());
 
 **2. 本章的 reqwest 关掉了默认 feature,所以不支持 HTTPS。**
 
-我们只会请求 `http://127.0.0.1:3000`,用不上 TLS,关掉能少编译一大堆东西。真实项目里你几乎肯定要加回来——「代价与边界」会说怎么加。
+这里只会请求 `http://127.0.0.1:3000`,用不上 TLS,关掉能少编译一大堆东西。真实项目里你几乎肯定要加回来——「代价与边界」会说怎么加。
 
 ### `.bytes()` vs `.bytes_stream()`:本章的分歧点
 
@@ -124,7 +124,7 @@ let mut builder = Response::builder().status(some_status);
 let response = builder.body(some_body).unwrap();
 ```
 
-`headers_mut()` 返回 `Option<&mut HeaderMap>`——如果 builder 之前的某一步出过错(比如状态码非法),它会是 `None`。这里我们刚建出来,一定是 `Some`。
+`headers_mut()` 返回 `Option<&mut HeaderMap>`——如果 builder 之前的某一步出过错(比如状态码非法),它会是 `None`。这里刚建出来,一定是 `Some`。
 
 ### `tokio_stream` 的组合子
 
@@ -209,7 +209,7 @@ tokio_stream::iter(0..5)              // Stream<Item = i32>
     .map(Ok::<_, Infallible>)         // Stream<Item = Result<String, Infallible>>
 ```
 
-最后一个 `map` 是为了满足 `Body::from_stream` 的签名——它要 `Result`,因为真实的流(比如读文件、读网络)是可能出错的。我们这个流不会错,所以错误类型用 `Infallible`(「永不发生」的类型,[第 16 章](16-dependency-injection.md)见过)。
+最后一个 `map` 是为了满足 `Body::from_stream` 的签名——它要 `Result`,因为真实的流(比如读文件、读网络)是可能出错的。这个流不会错,所以错误类型用 `Infallible`(「永不发生」的类型,[第 16 章](16-dependency-injection.md)见过)。
 
 `Ok::<_, Infallible>` 这个写法是把 `Ok` 当函数用,并显式标注错误类型。等价于 `.map(|s| Ok::<String, Infallible>(s))`。
 
@@ -281,6 +281,18 @@ async fn stream_reqwest_response(State(_client): State<Client>) -> Body {
 
 > **更好的写法**:官方示例把上游地址 `http://127.0.0.1:3000/stream` 直接硬编码在 handler 里。生产代码应该把它做成配置(环境变量或配置文件),并连同 `Client` 一起放进一个自定义的 state 结构体——[第 16 章](16-dependency-injection.md)讲的依赖注入正是为此。硬编码地址意味着换环境就得重新编译。
 
+**跑起来看**:
+
+```bash
+cargo run
+```
+
+```
+listening on 127.0.0.1:3000
+```
+
+服务照常启动,`/stream` 返回空 body——占位 handler 的预期行为。真正的验证在下一步:填上转发逻辑后,这条路由会原样吐出上游的 JSON。
+
 ### 步骤 3:转发响应
 
 **要做什么**:发起请求,把 reqwest 的响应转成 axum 的响应。
@@ -327,11 +339,11 @@ Response::builder().status(reqwest_response.status())        // ① 抄状态码
 .body(Body::from_stream(reqwest_response.bytes_stream()))    // ③ 流式转 body
 ```
 
-第 ③ 步是全章的核心:**`bytes_stream()` 立刻返回,`Body::from_stream` 立刻包装,handler 立刻返回**。上游的数据还没开始传,我们的响应已经在往客户端发了。
+第 ③ 步是全章的核心:**`bytes_stream()` 立刻返回,`Body::from_stream` 立刻包装,handler 立刻返回**。上游的数据还没开始传,响应已经在往客户端发了。
 
 **那个 `.unwrap()` 上的注释值得琢磨。** `builder.body()` 返回 `Result`,因为 builder 可能在之前某一步失败(比如状态码或响应头非法)。官方注释说 "This unwrap is fine because the body is empty here" —— 这句话其实**说的是 builder 的错误状态,不是 body**,措辞有点误导。真正的理由是:`status()` 来自一个合法的 `StatusCode`,`headers` 来自一个已经解析成功的 `HeaderMap`,两者都不可能让 builder 进入错误态。
 
-> **更好的写法**:`return (StatusCode::BAD_REQUEST, Body::empty()).into_response();` 里的 **`400 Bad Request` 用错了**。400 的语义是「**客户端**的请求有问题」,但这里出问题的是**我们和上游之间**——客户端什么都没做错。正确的状态码是 **`502 Bad Gateway`**(上游返回了无效响应)或 **`504 Gateway Timeout`**(上游超时)。这个区分对排障很重要:看到 400 你会去查调用方,看到 502 你才会去查上游。
+> **更好的写法**:`return (StatusCode::BAD_REQUEST, Body::empty()).into_response();` 里的 **`400 Bad Request` 用错了**。400 的语义是「**客户端**的请求有问题」,但这里出问题的是**服务与上游之间**——客户端什么都没做错。正确的状态码是 **`502 Bad Gateway`**(上游返回了无效响应)或 **`504 Gateway Timeout`**(上游超时)。这个区分对排障很重要:看到 400 你会去查调用方,看到 502 你才会去查上游。
 >
 > ```rust
 > return (StatusCode::BAD_GATEWAY, "upstream request failed").into_response();

@@ -427,6 +427,293 @@ curl -s -X POST http://127.0.0.1:3000/ \
 
 改回原来的顺序(虽然无所谓,但保持和官方示例一致)。
 
+### 步骤 4:跑一遍官方测试
+
+**要做什么**:把 `tests.rs` 加进来,用 `cargo test` 验证双向压缩和解压都正确。
+
+官方示例带了一个 `tests.rs`,把请求体的 gzip/br/zstd 解压和响应体的 gzip/br/zstd 压缩全覆盖了。先挂上模块声明:
+
+```rust
+// src/main.rs
+mod tests;   // 新增
+```
+
+`src/tests.rs` 内容较长(约 140 行),直接取自官方示例——测试写法(`oneshot` + 解压后断言)在[第 21 章](21-testing.md)讲透过,这里把完整文件一次给出:
+
+```rust
+// src/tests.rs —— 新建
+use assert_json_diff::assert_json_eq;
+use axum::{
+    body::{Body, Bytes},
+    response::Response,
+};
+use brotli::enc::BrotliEncoderParams;
+use flate2::{read::GzDecoder, write::GzEncoder, Compression};
+use http::{header, StatusCode};
+use serde_json::{json, Value};
+use std::io::{Read, Write};
+use tower::ServiceExt;
+
+use super::*;
+
+#[tokio::test]
+async fn handle_uncompressed_request_bodies() {
+    // Given
+
+    let body = json();
+
+    let compressed_request = http::Request::post("/")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(json_body(&body))
+        .unwrap();
+
+    // When
+
+    let response = app().oneshot(compressed_request).await.unwrap();
+
+    // Then
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_json_eq!(json_from_response(response).await, json());
+}
+
+#[tokio::test]
+async fn decompress_gzip_request_bodies() {
+    // Given
+
+    let body = compress_gzip(&json());
+
+    let compressed_request = http::Request::post("/")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_ENCODING, "gzip")
+        .body(Body::from(body))
+        .unwrap();
+
+    // When
+
+    let response = app().oneshot(compressed_request).await.unwrap();
+
+    // Then
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_json_eq!(json_from_response(response).await, json());
+}
+
+#[tokio::test]
+async fn decompress_br_request_bodies() {
+    // Given
+
+    let body = compress_br(&json());
+
+    let compressed_request = http::Request::post("/")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_ENCODING, "br")
+        .body(Body::from(body))
+        .unwrap();
+
+    // When
+
+    let response = app().oneshot(compressed_request).await.unwrap();
+
+    // Then
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_json_eq!(json_from_response(response).await, json());
+}
+
+#[tokio::test]
+async fn decompress_zstd_request_bodies() {
+    // Given
+
+    let body = compress_zstd(&json());
+
+    let compressed_request = http::Request::post("/")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_ENCODING, "zstd")
+        .body(Body::from(body))
+        .unwrap();
+
+    // When
+
+    let response = app().oneshot(compressed_request).await.unwrap();
+
+    // Then
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_json_eq!(json_from_response(response).await, json());
+}
+
+#[tokio::test]
+async fn do_not_compress_response_bodies() {
+    // Given
+    let request = http::Request::post("/")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(json_body(&json()))
+        .unwrap();
+
+    // When
+
+    let response = app().oneshot(request).await.unwrap();
+
+    // Then
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_json_eq!(json_from_response(response).await, json());
+}
+
+#[tokio::test]
+async fn compress_response_bodies_with_gzip() {
+    // Given
+    let request = http::Request::post("/")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::ACCEPT_ENCODING, "gzip")
+        .body(json_body(&json()))
+        .unwrap();
+
+    // When
+
+    let response = app().oneshot(request).await.unwrap();
+
+    // Then
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let response_body = byte_from_response(response).await;
+    let mut decoder = GzDecoder::new(response_body.as_ref());
+    let mut decompress_body = String::new();
+    decoder.read_to_string(&mut decompress_body).unwrap();
+    assert_json_eq!(
+        serde_json::from_str::<serde_json::Value>(&decompress_body).unwrap(),
+        json()
+    );
+}
+
+#[tokio::test]
+async fn compress_response_bodies_with_br() {
+    // Given
+    let request = http::Request::post("/")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::ACCEPT_ENCODING, "br")
+        .body(json_body(&json()))
+        .unwrap();
+
+    // When
+
+    let response = app().oneshot(request).await.unwrap();
+
+    // Then
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let response_body = byte_from_response(response).await;
+    let mut decompress_body = Vec::new();
+    brotli::BrotliDecompress(&mut response_body.as_ref(), &mut decompress_body).unwrap();
+    assert_json_eq!(
+        serde_json::from_slice::<serde_json::Value>(&decompress_body).unwrap(),
+        json()
+    );
+}
+
+#[tokio::test]
+async fn compress_response_bodies_with_zstd() {
+    // Given
+    let request = http::Request::post("/")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::ACCEPT_ENCODING, "zstd")
+        .body(json_body(&json()))
+        .unwrap();
+
+    // When
+
+    let response = app().oneshot(request).await.unwrap();
+
+    // Then
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let response_body = byte_from_response(response).await;
+    let decompress_body = zstd::stream::decode_all(std::io::Cursor::new(response_body)).unwrap();
+    assert_json_eq!(
+        serde_json::from_slice::<serde_json::Value>(&decompress_body).unwrap(),
+        json()
+    );
+}
+
+fn json() -> Value {
+    json!({
+      "name": "foo",
+      "mainProduct": {
+        "typeId": "product",
+        "id": "p1"
+      },
+    })
+}
+
+fn json_body(input: &Value) -> Body {
+    Body::from(serde_json::to_vec(&input).unwrap())
+}
+
+async fn json_from_response(response: Response) -> Value {
+    let body = byte_from_response(response).await;
+    body_as_json(body)
+}
+
+async fn byte_from_response(response: Response) -> Bytes {
+    axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap()
+}
+
+fn body_as_json(body: Bytes) -> Value {
+    serde_json::from_slice(body.as_ref()).unwrap()
+}
+
+fn compress_gzip(json: &Value) -> Vec<u8> {
+    let request_body = serde_json::to_vec(&json).unwrap();
+
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(&request_body).unwrap();
+    encoder.finish().unwrap()
+}
+
+fn compress_br(json: &Value) -> Vec<u8> {
+    let request_body = serde_json::to_vec(&json).unwrap();
+    let mut result = Vec::new();
+
+    let params = BrotliEncoderParams::default();
+    let _ = brotli::enc::BrotliCompress(&mut &request_body[..], &mut result, &params).unwrap();
+
+    result
+}
+
+fn compress_zstd(json: &Value) -> Vec<u8> {
+    let request_body = serde_json::to_vec(&json).unwrap();
+    zstd::stream::encode_all(std::io::Cursor::new(request_body), 4).unwrap()
+}
+
+```
+
+**七个测试分两组**:前四个带 `CONTENT_ENCODING` 的请求测"请求体解压",后三个带 `ACCEPT_ENCODING` 的请求测"响应体压缩",外加一个不带任何头的 `do_not_compress` 兜底。请求组的断言是"解压后原样到达 handler",响应组的断言是"压缩后能解压回原 JSON"——和步骤 2 里 curl 验证的是同一件事,只是不用起服务器。
+
+**每个测试都是 Given/When/Then 三段式**:`// Given` 构造输入、`// When` 发起请求、`// Then` 断言输出,和官方源码逐字一致。
+
+**跑起来看**:
+
+```bash
+cargo test
+```
+
+```
+running 8 tests
+test compress_response_bodies_with_br ... ok
+test compress_response_bodies_with_gzip ... ok
+test compress_response_bodies_with_zstd ... ok
+test decompress_br_request_bodies ... ok
+test decompress_gzip_request_bodies ... ok
+test decompress_zstd_request_bodies ... ok
+test do_not_compress_response_bodies ... ok
+test handle_uncompressed_request_bodies ... ok
+```
+
+顺便注意辅助函数 `compress_gzip`/`compress_br`/`compress_zstd` 就是步骤 2 里"手工压缩一个请求体"的复用——官方把验证压缩用的工具也写成了可测代码,这就是[第 21 章](21-testing.md)说的"为可测性而设计"。
+
 ## 完整代码
 
 `src/main.rs`:
@@ -492,74 +779,124 @@ use super::*;
 
 #[tokio::test]
 async fn handle_uncompressed_request_bodies() {
+    // Given
+
     let body = json();
+
     let compressed_request = http::Request::post("/")
         .header(header::CONTENT_TYPE, "application/json")
         .body(json_body(&body))
         .unwrap();
+
+    // When
+
     let response = app().oneshot(compressed_request).await.unwrap();
+
+    // Then
+
     assert_eq!(response.status(), StatusCode::OK);
     assert_json_eq!(json_from_response(response).await, json());
 }
 
 #[tokio::test]
 async fn decompress_gzip_request_bodies() {
+    // Given
+
     let body = compress_gzip(&json());
+
     let compressed_request = http::Request::post("/")
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::CONTENT_ENCODING, "gzip")
         .body(Body::from(body))
         .unwrap();
+
+    // When
+
     let response = app().oneshot(compressed_request).await.unwrap();
+
+    // Then
+
     assert_eq!(response.status(), StatusCode::OK);
     assert_json_eq!(json_from_response(response).await, json());
 }
 
 #[tokio::test]
 async fn decompress_br_request_bodies() {
+    // Given
+
     let body = compress_br(&json());
+
     let compressed_request = http::Request::post("/")
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::CONTENT_ENCODING, "br")
         .body(Body::from(body))
         .unwrap();
+
+    // When
+
     let response = app().oneshot(compressed_request).await.unwrap();
+
+    // Then
+
     assert_eq!(response.status(), StatusCode::OK);
     assert_json_eq!(json_from_response(response).await, json());
 }
 
 #[tokio::test]
 async fn decompress_zstd_request_bodies() {
+    // Given
+
     let body = compress_zstd(&json());
+
     let compressed_request = http::Request::post("/")
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::CONTENT_ENCODING, "zstd")
         .body(Body::from(body))
         .unwrap();
+
+    // When
+
     let response = app().oneshot(compressed_request).await.unwrap();
+
+    // Then
+
     assert_eq!(response.status(), StatusCode::OK);
     assert_json_eq!(json_from_response(response).await, json());
 }
 
 #[tokio::test]
 async fn do_not_compress_response_bodies() {
+    // Given
     let request = http::Request::post("/")
         .header(header::CONTENT_TYPE, "application/json")
         .body(json_body(&json()))
         .unwrap();
+
+    // When
+
     let response = app().oneshot(request).await.unwrap();
+
+    // Then
+
     assert_eq!(response.status(), StatusCode::OK);
     assert_json_eq!(json_from_response(response).await, json());
 }
 
 #[tokio::test]
 async fn compress_response_bodies_with_gzip() {
+    // Given
     let request = http::Request::post("/")
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::ACCEPT_ENCODING, "gzip")
         .body(json_body(&json()))
         .unwrap();
+
+    // When
+
     let response = app().oneshot(request).await.unwrap();
+
+    // Then
+
     assert_eq!(response.status(), StatusCode::OK);
     let response_body = byte_from_response(response).await;
     let mut decoder = GzDecoder::new(response_body.as_ref());
@@ -573,12 +910,19 @@ async fn compress_response_bodies_with_gzip() {
 
 #[tokio::test]
 async fn compress_response_bodies_with_br() {
+    // Given
     let request = http::Request::post("/")
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::ACCEPT_ENCODING, "br")
         .body(json_body(&json()))
         .unwrap();
+
+    // When
+
     let response = app().oneshot(request).await.unwrap();
+
+    // Then
+
     assert_eq!(response.status(), StatusCode::OK);
     let response_body = byte_from_response(response).await;
     let mut decompress_body = Vec::new();
@@ -591,12 +935,19 @@ async fn compress_response_bodies_with_br() {
 
 #[tokio::test]
 async fn compress_response_bodies_with_zstd() {
+    // Given
     let request = http::Request::post("/")
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::ACCEPT_ENCODING, "zstd")
         .body(json_body(&json()))
         .unwrap();
+
+    // When
+
     let response = app().oneshot(request).await.unwrap();
+
+    // Then
+
     assert_eq!(response.status(), StatusCode::OK);
     let response_body = byte_from_response(response).await;
     let decompress_body = zstd::stream::decode_all(std::io::Cursor::new(response_body)).unwrap();
@@ -637,6 +988,7 @@ fn body_as_json(body: Bytes) -> Value {
 
 fn compress_gzip(json: &Value) -> Vec<u8> {
     let request_body = serde_json::to_vec(&json).unwrap();
+
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(&request_body).unwrap();
     encoder.finish().unwrap()
@@ -645,8 +997,10 @@ fn compress_gzip(json: &Value) -> Vec<u8> {
 fn compress_br(json: &Value) -> Vec<u8> {
     let request_body = serde_json::to_vec(&json).unwrap();
     let mut result = Vec::new();
+
     let params = BrotliEncoderParams::default();
     let _ = brotli::enc::BrotliCompress(&mut &request_body[..], &mut result, &params).unwrap();
+
     result
 }
 
@@ -654,6 +1008,7 @@ fn compress_zstd(json: &Value) -> Vec<u8> {
     let request_body = serde_json::to_vec(&json).unwrap();
     zstd::stream::encode_all(std::io::Cursor::new(request_body), 4).unwrap()
 }
+
 ```
 
 `data/products.json`:
@@ -672,8 +1027,6 @@ fn compress_zstd(json: &Value) -> Vec<u8> {
     ]
 }
 ```
-
-`data/products.json.gz` 是二进制文件,不直接展示内容。用项目搭建部分的命令生成:
 
 ```bash
 gzip -k data/products.json

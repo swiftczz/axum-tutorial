@@ -120,6 +120,8 @@ cargo add tracing-subscriber --features env-filter
 
 **要做什么**:写一个自定义提取器,把整个 body 读成 `Bytes` 并顺手打条日志。
 
+日志初始化样板的作用见[第 03 章](03-form.md#步骤-1显示表单页面),照抄即可。
+
 ```rust
 // src/main.rs
 use axum::{

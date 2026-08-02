@@ -519,34 +519,6 @@ curl -s -X POST http://127.0.0.1:3000/dyn/users \
 
 **这个验证顺带说明了一件事**:`InMemoryUserRepo` 的 `Clone` 是浅拷贝。如果它内部直接是 `HashMap` 而不是 `Arc<Mutex<HashMap>>`,两组路由就会各存各的,互相看不见。**"这个类型的 `Clone` 到底复制了什么"在共享状态场景下必须想清楚**。
 
-## 该选哪个
-
-前置知识那张表列了区别,这里给判断顺序。
-
-**默认用 trait 对象。** 官方注释写得很直白:"Using trait objects is recommended unless you really need generics."
-
-动态分发的开销在 Web 服务里可以忽略——一次虚表跳转是纳秒级,而一次数据库查询是毫秒级,差了六个数量级。为这点开销引入类型参数扩散不划算。
-
-**下面这些情况才考虑泛型:**
-
-- trait 不是对象安全的(有泛型方法、返回 `Self` 等)
-- 依赖在极热的路径上被高频调用,而且你**测量过**动态分发确实是瓶颈
-- 需要编译期就确定实现,比如用类型状态模式做静态保证
-
-**注意"运行时切换实现"只有 trait 对象能做。** 比如根据配置决定用内存存储还是数据库:
-
-```rust
-let repo: Arc<dyn UserRepo> = if config.use_memory {
-    Arc::new(InMemoryUserRepo::default())
-} else {
-    Arc::new(PostgresUserRepo::new(pool))
-};
-```
-
-泛型版本写不出这个——两个分支的类型不同,编译不过。
-
-**测试场景两者都支持**,但 trait 对象更省事:测试里注入 `Arc::new(FakeUserRepo)` 就行,不用改任何 turbofish。
-
 ## 完整代码
 
 `src/main.rs`:
@@ -716,6 +688,36 @@ impl UserRepo for InMemoryUserRepo {
     }
 }
 ```
+
+
+
+## 该选哪个
+
+前置知识那张表列了区别,这里给判断顺序。
+
+**默认用 trait 对象。** 官方注释写得很直白:"Using trait objects is recommended unless you really need generics."
+
+动态分发的开销在 Web 服务里可以忽略——一次虚表跳转是纳秒级,而一次数据库查询是毫秒级,差了六个数量级。为这点开销引入类型参数扩散不划算。
+
+**下面这些情况才考虑泛型:**
+
+- trait 不是对象安全的(有泛型方法、返回 `Self` 等)
+- 依赖在极热的路径上被高频调用,而且你**测量过**动态分发确实是瓶颈
+- 需要编译期就确定实现,比如用类型状态模式做静态保证
+
+**注意"运行时切换实现"只有 trait 对象能做。** 比如根据配置决定用内存存储还是数据库:
+
+```rust
+let repo: Arc<dyn UserRepo> = if config.use_memory {
+    Arc::new(InMemoryUserRepo::default())
+} else {
+    Arc::new(PostgresUserRepo::new(pool))
+};
+```
+
+泛型版本写不出这个——两个分支的类型不同,编译不过。
+
+**测试场景两者都支持**,但 trait 对象更省事:测试里注入 `Arc::new(FakeUserRepo)` 就行,不用改任何 turbofish。
 
 ## 动手练习
 

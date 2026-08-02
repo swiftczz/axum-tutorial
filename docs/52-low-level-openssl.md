@@ -156,7 +156,7 @@ sudo dnf install pkgconf-pkg-config openssl-devel
 brew install openssl@3
 ```
 
- **macOS 上可能还要告诉 `openssl-sys` 去哪找**:
+**macOS 上可能还要告诉 `openssl-sys` 去哪找**:
 
 ```bash
 export OPENSSL_DIR=$(brew --prefix openssl@3)

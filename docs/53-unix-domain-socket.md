@@ -88,7 +88,7 @@ if cred.uid() != EXPECTED_UID {
 
 不需要密钥、不需要令牌、不会过期、不会泄露。**同机的服务间调用用这个,比任何 token 方案都简单可靠。**
 
- **两个注意点:**
+**两个注意点:**
 
 1. **`pid` 不可用于安全判断。** 进程可以退出,PID 会被复用。做审计日志可以,做授权不行。**`uid` / `gid` 才是可靠的。**
 2. **这是"连接建立时"的凭据。** 长连接期间对端如果换了身份(极少见),你拿到的还是建连时的值。
@@ -132,7 +132,7 @@ impl connect_info::Connected<IncomingStream<'_, UnixListener>> for UdsConnectInf
 **它回答的问题是:"给你一条刚建立的连接,你要从里面记下什么?"**
 
 - `SocketAddr` 的实现记的是对端地址
-- 我们的 `UdsConnectInfo` 记的是**对端地址 + 对端凭据**
+- 这个 `UdsConnectInfo` 记的是**对端地址 + 对端凭据**
 
 **`IncomingStream<'_, L>` 的那个 `L` 就是监听器类型。** 因为不同监听器给出的连接类型不同(`TcpStream` vs `UnixStream`),能提取的信息也不同——`peer_cred()` 只有 `UnixStream` 才有。
 
@@ -159,7 +159,7 @@ let uds = UnixListener::bind(path)?;
 
 步骤 4 会演示忘了这一步的后果。
 
- **这个 `remove_file` 本身也有风险**:如果真的有另一个进程正在用这个套接字,你会**把它的套接字文件删掉**(它还在跑,但没人能连上它了)。生产环境应该用文件锁或 systemd 的套接字激活([第 49 章](49-auto-reload.md#套接字激活是什么))来避免。
+**这个 `remove_file` 本身也有风险**:如果真的有另一个进程正在用这个套接字,你会**把它的套接字文件删掉**(它还在跑,但没人能连上它了)。生产环境应该用文件锁或 systemd 的套接字激活([第 49 章](49-auto-reload.md#套接字激活是什么))来避免。
 
 **② 路径长度有硬限制。**
 
@@ -203,7 +203,7 @@ cargo add tokio --features full
 cargo add tracing-subscriber --features env-filter
 ```
 
- **本章需要 Linux 或 macOS。** Windows 虽然从 Windows 10 起支持 AF_UNIX,但 `tokio::net::UnixListener` 目前只在 Unix 上提供。
+**本章需要 Linux 或 macOS。** Windows 虽然从 Windows 10 起支持 AF_UNIX,但 `tokio::net::UnixListener` 目前只在 Unix 上提供。
 
 ## 分步构建
 
@@ -481,7 +481,7 @@ new connection from `UdsConnectInfo { ..., peer_cred: UCred { uid: 0, gid: 0, pi
 
 **服务端被 `tokio::spawn` 到后台**,主流程继续当客户端。[第 43 章](43-reverse-proxy.md#tokiospawn一个进程跑两个服务)用过同样的手法。
 
-** 注意程序会在断言跑完后退出** —— 主流程结束,spawn 出去的服务端任务被丢弃。**所以这一步之后,curl 验证要赶在退出前,或者干脆注释掉客户端部分。**
+**注意程序会在断言跑完后退出** —— 主流程结束,spawn 出去的服务端任务被丢弃。**所以这一步之后,curl 验证要赶在退出前,或者干脆注释掉客户端部分。**
 
 **`hyper::client::conn::http1::handshake` 是第三种 HTTP 客户端了**,和前面两种对比一下:
 
@@ -491,7 +491,7 @@ new connection from `UdsConnectInfo { ..., peer_cred: UCred { uid: 0, gid: 0, pi
 | `hyper-util` 的 `legacy::Client` | [第 43 章](43-reverse-proxy.md) | 中 | 连接池它管,连接器你选 |
 | **`hyper::client::conn`** | **本章** | **最低** | **连接是你自己建的,连接任务也要你自己 spawn** |
 
-**为什么这里要用最低层的?** 因为前两种都假设"给我一个 URL,我去建连接"。**而我们已经有一条现成的 `UnixStream` 了**,需要的是"在这条已有的流上讲 HTTP"。这正是 `conn` 模块的定位。
+**为什么这里要用最低层的?** 因为前两种都假设"给我一个 URL,我去建连接"。**而你已经有一条现成的 `UnixStream` 了**,需要的是"在这条已有的流上讲 HTTP"。这正是 `conn` 模块的定位。
 
 **`handshake` 返回一对东西:**
 
@@ -635,7 +635,7 @@ umask          # 看看你的
 >
 > 如果要允许特定的用户或组连接(比如 Nginx 以 `www-data` 运行),用 `0660` 加上 `chown :www-data`。
 
- **另一个问题是路径选在了 `/tmp`。** `/tmp` 是**所有用户可写的共享目录**。虽然有 sticky bit 保护(别人删不掉你的文件),但:
+**另一个问题是路径选在了 `/tmp`。** `/tmp` 是**所有用户可写的共享目录**。虽然有 sticky bit 保护(别人删不掉你的文件),但:
 
 - 任何人都能创建 `/tmp/axum/` —— **如果攻击者抢先创建了这个目录并设成自己可写,你的 `create_dir_all` 会直接成功用它**
 - `/tmp` 在很多系统上会被定期清理,套接字文件可能凭空消失

@@ -149,6 +149,8 @@ touch src/custom_extractor.rs src/derive_from_request.rs src/with_rejection.rs
 
 **要做什么**:先写 `main.rs`,只挂一条用**内置** `Json` 的路由,确认默认拒绝长什么样。这是后面三种做法的对比基准。
 
+日志初始化样板的作用见[第 03 章](03-form.md#步骤-1显示表单页面),照抄即可。
+
 ```rust
 // src/main.rs
 use axum::{routing::post, Router};
@@ -237,7 +239,7 @@ content-type: text/plain; charset=utf-8
 Failed to parse the request body as JSON: EOF while parsing a value at line 1 column 7
 ```
 
-**三种失败都是 `text/plain`**,而成功时是 `application/json`。这就是要解决的不一致。注意状态码是对的(415、400),错误描述也挺清楚——**我们要保留这两样,只改包装格式**。
+**三种失败都是 `text/plain`**,而成功时是 `application/json`。这就是要解决的不一致。注意状态码是对的(415、400),错误描述也挺清楚——**要保留这两样,只改包装格式**。
 
 ### 步骤 2:做法一,手写 FromRequest
 
@@ -727,6 +729,8 @@ done
 三者不互斥。真实项目常见的组合是:定义一个派生版 `Json<T>` 作为全局默认,少数需要额外上下文的接口单独手写提取器。
 
 **一个共同的前提值得强调**:三种做法都建立在 `rejection.status()` 和 `rejection.body_text()` 之上——**没有一种是在重新判断"什么错该返回什么码"**。axum 已经把这部分做对了,定制工作只是换个包装。自己重写状态码映射既费力又容易出错。
+
+**这一步没有新代码,不用重新运行。** 三种做法的响应在步骤 2、3、4 各自验证过,上面表格里的输出就是那三次 `curl` 的结果。
 
 ## 完整代码
 

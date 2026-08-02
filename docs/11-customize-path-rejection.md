@@ -106,6 +106,8 @@ cargo add tracing-subscriber --features env-filter
 
 **要做什么**:先用 `axum::extract::Path` 跑通正常路径,再制造几种失败作为对比基准。
 
+日志初始化样板的作用见[第 03 章](03-form.md#步骤-1显示表单页面),照抄即可。
+
 ```rust
 // src/main.rs
 use axum::{extract::Path, response::IntoResponse, routing::get, Router};
@@ -299,6 +301,13 @@ where
 
                         (status, body)
                     }
+                    PathRejection::MissingPathParams(error) => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        PathError {
+                            message: error.to_string(),
+                            location: None,
+                        },
+                    ),
                     _ => (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         PathError {
@@ -333,6 +342,8 @@ struct PathError {
 **`kind.to_string()`** 复用了 `ErrorKind` 的 `Display` 实现——错误描述不用自己写,axum 已经写好了。这和[第 10 章](10-customize-extractor-error.md#小结与下一章预告)那条规则一致:**定制只是换包装,不重写内容**。
 
 **`let mut status = StatusCode::BAD_REQUEST;`** 先给个默认值,只在 `UnsupportedType` 分支里改成 `500`。这是本章的核心判断,下一步展开讲。
+
+**`PathRejection::MissingPathParams(error)` 分支处理"参数缺失"。** 路由匹配成功、但请求路径里缺参数时会出现它——典型成因是"路由写了两个参数,handler 的提取器却只声明了一个",属于程序员的错,所以和 `UnsupportedType` 一样返回 `500`,不 blame 客户端。它单独占一个分支而不是并进 `_` 兜底,是为了让 `message` 用上 `error` 自带的描述,而不是笼统的 "Unhandled path rejection"。下一步会亲手制造这个错误。
 
 **跑起来看**:
 

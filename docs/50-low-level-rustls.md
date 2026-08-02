@@ -112,7 +112,7 @@ config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
 **顺序即优先级**:服务端从客户端提供的列表里,按**自己这个列表的顺序**挑第一个双方都支持的。把 `h2` 放前面就是"能用 HTTP/2 就用"。
 
- **不设置 `alpn_protocols` 会怎样?** 服务端在握手时不宣告任何协议,**浏览器和 curl 就只会用 HTTP/1.1**。服务照常工作,只是永远用不上 HTTP/2 —— **没有任何报错,静默降级**。步骤 5 会亲手演示。
+**不设置 `alpn_protocols` 会怎样?** 服务端在握手时不宣告任何协议,**浏览器和 curl 就只会用 HTTP/1.1**。服务照常工作,只是永远用不上 HTTP/2 —— **没有任何报错,静默降级**。步骤 5 会亲手演示。
 
 **这也解释了 `auto::Builder` 在 TLS 场景下的作用**:ALPN 已经在握手时定了协议,`auto::Builder` 拿到解密后的字节流再确认一次。两者配合,不冲突。
 
@@ -128,7 +128,7 @@ config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
 **方括号是必需的**,否则 `::1:3000` 里的最后一个冒号会有歧义。
 
- **这可能带来一个坑**:`curl https://localhost:3000` 能不能连上,取决于你系统的 `localhost` 解析到 `::1` 还是 `127.0.0.1`。多数现代系统会优先试 `::1`,但如果你的 `/etc/hosts` 只写了 `127.0.0.1 localhost`,**这条命令会连接被拒**。
+**这可能带来一个坑**:`curl https://localhost:3000` 能不能连上,取决于你系统的 `localhost` 解析到 `::1` 还是 `127.0.0.1`。多数现代系统会优先试 `::1`,但如果你的 `/etc/hosts` 只写了 `127.0.0.1 localhost`,**这条命令会连接被拒**。
 
 **稳妥的验证命令是显式写地址**:
 
@@ -177,7 +177,7 @@ cargo add tracing-subscriber --features env-filter
 >
 > 这也是本教程坚持用 `cargo add` 而不是抄 `Cargo.toml` 的原因之一。
 
-**`tower-service` 而不是 `tower`。** 我们只需要 `Service` trait 本身,不需要 `tower` 里那一堆中间件。`tower` 只是把 `tower-service` 重导出了,直接依赖更轻。
+**`tower-service` 而不是 `tower`。** 这里只需要 `Service` trait 本身,不需要 `tower` 里那一堆中间件。`tower` 只是把 `tower-service` 重导出了,直接依赖更轻。
 
 ### 生成证书
 
@@ -197,7 +197,7 @@ cd ..
 echo 'self_signed_certs/*.pem' >> .gitignore
 ```
 
- **注意 SAN 里多了 `IP:::1`** —— 因为本章绑的是 IPv6 回环。如果你打算用 `curl -k` 跳过校验,这一条可有可无;但**一旦你想用 `--cacert` 做真正的校验,证书里没有 `::1` 就会失败**。[第 32 章](32-tls-rustls.md#生成自签名证书)强调过 SAN 的重要性。
+**注意 SAN 里多了 `IP:::1`** —— 因为本章绑的是 IPv6 回环。如果你打算用 `curl -k` 跳过校验,这一条可有可无;但**一旦你想用 `--cacert` 做真正的校验,证书里没有 `::1` 就会失败**。[第 32 章](32-tls-rustls.md#生成自签名证书)强调过 SAN 的重要性。
 
 ## 分步构建
 
@@ -548,9 +548,9 @@ HTTP/1.1 200
 
 **这就是典型的静默降级。** 你以为自己上了 HTTP/2,实际上多路复用、头部压缩、服务端推送一样都没有。**只有翻网络面板或者用 `-v` 才看得出来。**
 
-**在真实项目里这个 bug 的面貌通常是**:"我们上了 HTTP/2 之后性能没有任何变化" —— 因为压根没上。
+**在真实项目里这个 bug 的面貌通常是**:"上了 HTTP/2 之后性能没有任何变化" —— 因为压根没上。
 
- **顺带一个反向的坑**:如果你只写 `vec![b"h2".to_vec()]`(只支持 HTTP/2),**不支持 HTTP/2 的客户端会直接握手失败**,而不是降级。ALPN 列表**必须包含 `http/1.1` 兜底**,除非你确定所有客户端都支持 HTTP/2(比如纯 gRPC 服务)。
+**顺带一个反向的坑**:如果你只写 `vec![b"h2".to_vec()]`(只支持 HTTP/2),**不支持 HTTP/2 的客户端会直接握手失败**,而不是降级。ALPN 列表**必须包含 `http/1.1` 兜底**,除非你确定所有客户端都支持 HTTP/2(比如纯 gRPC 服务)。
 
 **把那行加回去。**
 
@@ -750,7 +750,7 @@ openssl x509 -req -in client.csr -CA ca-cert.pem -CAkey ca-key.pem -out client-c
 
 加 TLS 的改动本身很小:在[第 44 章](44-serve-with-hyper.md)那个 accept 循环里,spawn 之后插一步 `tls_acceptor.accept(cnx).await`。**握手完成后拿到的 `TlsStream` 仍然是 `AsyncRead + AsyncWrite`,上层完全不用改** —— 这就是分层抽象的价值。
 
- **握手必须在 spawn 里做**,放在循环里的话,一个不完成握手的慢客户端就能让整个服务再也接不了新连接。
+**握手必须在 spawn 里做**,放在循环里的话,一个不完成握手的慢客户端就能让整个服务再也接不了新连接。
 
 `rustls` 的 `ServerConfig::builder()` 用**类型状态模式**强制你配完所有必要项,漏了直接编译不过——`with_no_client_auth()` 那个位置就是 mTLS 的开关。这和 OpenSSL 那种"忘了调某个函数就静默不安全"的风格形成鲜明对比([第 52 章](52-low-level-openssl.md)会看到)。
 

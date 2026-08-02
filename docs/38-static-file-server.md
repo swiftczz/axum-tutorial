@@ -709,6 +709,64 @@ Hi from index.html
 
 **精确路径 `/foo` 映射到一个文件。**
 
+### 步骤 4:跑一遍官方测试
+
+**要做什么**:把 `tests.rs` 加进来,用 `cargo test` 验证 3002 端口的兜底行为。
+
+官方示例带了一个 `tests.rs`,断言步骤 2 观察到的行为。先挂上模块声明,再新建测试文件:
+
+```rust
+// src/main.rs
+mod tests;   // 新增
+```
+
+```rust
+// src/tests.rs —— 新建
+use super::using_serve_dir_with_assets_fallback;
+use axum::{body::Body, http::Request, http::StatusCode};
+use http_body_util::BodyExt;
+use tower::ServiceExt;
+
+const INDEX_HTML_CONTENT: &str = include_str!("../assets/index.html");
+
+// `/script.js` at the root is not an asset under `/assets`, so it falls through to the SPA
+// fallback. The fallback serves `index.html` with a 404 status -- the path wasn't found, but
+// the SPA handles routing client-side.
+#[tokio::test]
+async fn assets_not_served_at_root() {
+    let app = using_serve_dir_with_assets_fallback();
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/script.js")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let body_str = String::from_utf8(body.to_vec()).unwrap();
+    assert_eq!(body_str, INDEX_HTML_CONTENT);
+}
+```
+
+**测试写法在[第 21 章](21-testing.md)讲透过**:`oneshot` 不启动服务器直接调用 `app`,`collect` 读完整 body。这里唯一的新东西是 `include_str!`——编译期把 `assets/index.html` 的内容嵌入二进制,测试里直接拿它和响应体比较,不用去读文件。
+
+**跑起来看**:
+
+```bash
+cargo test
+```
+
+```
+running 1 test
+test assets_not_served_at_root ... ok
+```
+
+注意测试调用的不是 `main` 里的七个服务,而是**单独构造** `using_serve_dir_with_assets_fallback()`——这正是[第 21 章](21-testing.md)讲的"把 `Router` 从 `main` 里抽出来"的收益:每个服务都能单独测,不需要真开端口。
+
 ## 完整代码
 
 `assets/index.html`:

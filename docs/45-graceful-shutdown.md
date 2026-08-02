@@ -129,7 +129,7 @@ tokio::select! {
 
 **空闲的 keep-alive 连接会立刻关闭**,只有正在处理请求的连接会被等。
 
- **注意第 3 步:它会一直等。** 如果有一个请求永远不返回(比如本章的 `/forever`,或者一条 WebSocket 长连接),**`serve` 永远不会 resolve,进程永远不退出**。这就是必须配超时的原因,步骤 4 会亲手演示。
+**注意第 3 步:它会一直等。** 如果有一个请求永远不返回(比如本章的 `/forever`,或者一条 WebSocket 长连接),**`serve` 永远不会 resolve,进程永远不退出**。这就是必须配超时的原因,步骤 4 会亲手演示。
 
 ### `Router::layer` 可以接受元组
 
@@ -138,7 +138,7 @@ tokio::select! {
 ```rust
 .layer((
     TraceLayer::new_for_http(),
-    TimeoutLayer::new(Duration::from_secs(10)),
+    TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(10)),
 ))
 ```
 
@@ -387,7 +387,7 @@ curl 挂着(意料之中,handler 永不返回)。现在在服务端按 **Ctrl-C*
 
 **第一层:`serve` 在等那条永不结束的连接。** 前置知识说过,优雅停机的第 3 步是"等所有连接关闭"。`/forever` 的连接永远不会关闭,所以这个等待永远不会结束。
 
-**第二层(更阴险):第二次 Ctrl-C 也没用。** 因为 `tokio::signal::ctrl_c()` 一旦被调用,就**替换掉了进程的默认 SIGINT 行为**。默认行为是"终止进程",现在变成了"送进 tokio 的信号通道"。而我们的 `select!` 已经完成并被丢弃,**没有人再去读这个通道**,于是信号被静默吞掉。
+**第二层(更阴险):第二次 Ctrl-C 也没用。** 因为 `tokio::signal::ctrl_c()` 一旦被调用,就**替换掉了进程的默认 SIGINT 行为**。默认行为是"终止进程",现在变成了"送进 tokio 的信号通道"。而 `select!` 已经完成并被丢弃,**没有人再去读这个通道**,于是信号被静默吞掉。
 
 **你唯一的出路是另开终端 `kill -9`:**
 
@@ -404,6 +404,7 @@ pkill -9 graceful-shutdown
 **要做什么**:用 `TimeoutLayer` 给每个请求设一个上限,这样"等所有请求完成"就一定会结束。
 
 ```rust
+use axum::http::StatusCode;
 use tower_http::timeout::TimeoutLayer;
 ```
 
@@ -415,15 +416,13 @@ use tower_http::timeout::TimeoutLayer;
             TraceLayer::new_for_http(),
             // Graceful shutdown will wait for outstanding requests to complete. Add a timeout so
             // requests don't hang forever.
-            TimeoutLayer::new(Duration::from_secs(10)),
+            TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(10)),
         ));
 ```
 
 **`.layer(( A, B ))` 传的是元组** —— 前置知识讲过,左边在外层。这里 `TraceLayer` 在外、`TimeoutLayer` 在内,所以超时产生的 408 会被日志记录到。
 
-**`TimeoutLayer::new` 超时后返回的就是 `408 Request Timeout`**,这是 `tower-http` 的默认行为,不需要额外配置。
-
-> 官方示例写的是 `TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(10))`,显式指定了状态码。这个构造函数是 `tower-http` 较新版本才有的;用 crates.io 上的 `TimeoutLayer::new(...)` 结果完全一样,因为默认状态码就是 408。如果你想返回别的状态码(比如 `503 Service Unavailable`),再去查你所用版本是否支持定制。
+**`TimeoutLayer::with_status_code` 的第一个参数是超时响应的状态码**,这里显式传 `408`。新版 tower-http 里不带状态码的 `TimeoutLayer::new` 已被标记弃用,官方推荐显式写出——想换 `503 Service Unavailable` 之类只需要改一个参数。
 
 **跑起来看**:
 
@@ -458,7 +457,7 @@ DEBUG request{method=GET uri=/forever ...}: tower_http::trace::on_response: fini
 
 **这一点很重要:`TimeoutLayer` 不是"停机超时",而是"请求超时"。** 它恰好也解决了停机问题——因为停机等的就是这些请求。
 
- **10 秒这个值不是随便选的。** 前置知识说过,Docker 的默认宽限期就是 10 秒。设成 10 秒意味着:最坏情况下应用刚好在被 SIGKILL 的那一刻完成清理。实践中应该**设得比平台宽限期小一些**(比如平台 30 秒、应用 20 秒),留出余量。
+**10 秒这个值不是随便选的。** 前置知识说过,Docker 的默认宽限期就是 10 秒。设成 10 秒意味着:最坏情况下应用刚好在被 SIGKILL 的那一刻完成清理。实践中应该**设得比平台宽限期小一些**(比如平台 30 秒、应用 20 秒),留出余量。
 
 ### 步骤 6:验证 SIGTERM(生产环境真正会收到的信号)
 
@@ -501,7 +500,7 @@ curl: (52) Empty reply from server
 ```rust
 use std::time::Duration;
 
-use axum::{routing::get, Router};
+use axum::{http::StatusCode, routing::get, Router};
 use tokio::net::TcpListener;
 use tokio::signal;
 use tokio::time::sleep;
@@ -533,7 +532,7 @@ async fn main() {
             TraceLayer::new_for_http(),
             // Graceful shutdown will wait for outstanding requests to complete. Add a timeout so
             // requests don't hang forever.
-            TimeoutLayer::new(Duration::from_secs(10)),
+            TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(10)),
         ));
 
     // Create a `TcpListener` using tokio.

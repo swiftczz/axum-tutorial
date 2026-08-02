@@ -311,7 +311,7 @@ cargo run
 ```
 
 ```
-listening on 127.0.0.1:3000
+DEBUG sqlx_postgres: listening on 127.0.0.1:3000
 ```
 
 ```bash
@@ -481,10 +481,10 @@ for i in 1 2 3 4 5 6; do curl -s -o /dev/null -w "%{http_code} " -X POST http://
 ```
 
 ```
-500 500 500 500 500 500
+500 200 200 200 200 200
 ```
 
-等一会儿再看,前 5 个是 10 秒后成功、第 6 个是 3 秒后失败(`acquire_timeout`)。可以分开测得更清楚:
+**顺序不是固定的**,但内容一定是:一个 `500` 先回来(第 6 个请求 3 秒时 `acquire_timeout` 失败),五个 `200` 后回来(10 秒后成功)。前 5 个是 10 秒后成功、第 6 个是 3 秒后失败(`acquire_timeout`)。可以分开测得更清楚:
 
 ```bash
 # 先并发占满 5 条
@@ -642,7 +642,7 @@ docker exec -it axum-tutorial-pg psql -U postgres -c \
 
 **3. 用 `FromRef` 派生宏支持复合状态。**
 
-提示:定义 `#[derive(Clone, FromRef)] struct AppState { pool: PgPool, greeting: String }`,`with_state(AppState { ... })`。你会发现 `DatabaseConnection` 提取器**一个字都不用改**就能工作,而且还能同时写 `State(greeting): State<String>` 的 handler。这就是 `FromRef` 的价值。
+提示:先 `cargo add axum --features macros`(`FromRef` 是派生宏),然后定义 `#[derive(Clone, FromRef)] struct AppState { pool: PgPool, greeting: String }`,`with_state(AppState { ... })`。你会发现 `DatabaseConnection` 提取器**一个字都不用改**就能工作,而且还能同时写 `State(greeting): State<String>` 的 handler。这就是 `FromRef` 的价值。
 
 ## 小结与下一章预告
 

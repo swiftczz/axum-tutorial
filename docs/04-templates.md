@@ -55,7 +55,7 @@ axum 的路由语法用花括号声明参数:
 
 **转义漏掉就是安全漏洞。** 假设你写 `format!("<h1>Hello, {}!</h1>", name)`,而用户把名字设成 `<script>fetch('/api/delete-all')</script>`,这段脚本会原样进入页面并在访客浏览器里执行——这就是 **XSS**(跨站脚本攻击)。[第 01 章](01-hello-world.md#步骤-3改成返回-html)提到 `Html` 不做转义,风险就在这里。
 
-**模板引擎**把 HTML 移到独立文件里,用特殊语法标记要插入变量的位置:
+**模板引擎**(template engine)把 HTML 移到独立文件里,用特殊语法标记要插入变量的位置:
 
 ```html
 <h1>Hello, {{ name }}!</h1>
@@ -388,7 +388,7 @@ where
 
 本章只有一个返回分支,所以 `impl IntoResponse` 没问题。
 
-> **本章不深入**:handler 有多个返回分支时,常用的返回类型是 `Result<T, E>`——只要 `T` 和 `E` 都实现 `IntoResponse`,`Result` 自身就实现。[第 05 章](05-templates-minijinja.md#步骤-1布局模板-首页认识-state)会先用到它,错误类型该怎么设计、如何用 `?` 传播错误见[第 14 章](14-error-handling.md)。
+> **本章不深入**:handler 有多个返回分支时,常用的返回类型是 `Result<T, E>`——只要 `T` 和 `E` 都实现 `IntoResponse`,`Result` 自身就实现。[第 05 章](05-templates-minijinja.md#步骤-1布局模板--首页-认识-state)会先用到它,错误类型该怎么设计、如何用 `?` 传播错误见[第 14 章](14-error-handling.md)。
 
 **跑起来看**:
 

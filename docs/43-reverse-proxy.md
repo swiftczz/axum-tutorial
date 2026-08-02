@@ -97,7 +97,7 @@ let path_query = req.uri()
 | 自带 | TLS、重定向、cookie、gzip、超时 | **什么都不自带** |
 | 适合 | 调第三方 API | **转发已有的请求** |
 
-**代理场景下低层客户端更合适**,因为我们手里已经有一个完整的 `http::Request` 了——不需要把它拆成 URL + 头 + body 再让高层库重新拼回去。`reqwest` 也能做(`Client::execute`),但绕。
+**代理场景下低层客户端更合适**,因为手里已经有一个完整的 `http::Request` 了——不需要把它拆成 URL + 头 + body 再让高层库重新拼回去。`reqwest` 也能做(`Client::execute`),但绕。
 
 反过来,[第 41 章](41-reqwest-response.md)那种"我要去请求某个已知的 API"场景,`reqwest` 明显更顺手。**没有哪个更好,是场景不同。**
 
@@ -151,7 +151,7 @@ Ok(client.request(req).await?.into_response())
 
 `client.request()` 返回 `http::Response<hyper::body::Incoming>`,而 axum 为**所有** `http::Response<B>`(只要 `B: http_body::Body<Data = Bytes>`)实现了 `IntoResponse`。所以一个 `.into_response()` 就转好了。
 
-**关键在于:这个转换是流式的。** `Incoming` 被包成 `axum::body::Body`,数据还在网络上一块一块地来。[第 41 章](41-reqwest-response.md#bytes-vs-bytes_stream本章的分歧点)费了一整章讲"别用 `.bytes()`",在这里**根本没有犯错的机会**——因为我们压根没去读 body。
+**关键在于:这个转换是流式的。** `Incoming` 被包成 `axum::body::Body`,数据还在网络上一块一块地来。[第 41 章](41-reqwest-response.md#bytes-vs-bytes_stream本章的分歧点)费了一整章讲"别用 `.bytes()`",在这里**根本没有犯错的机会**——因为压根没去读 body。
 
 **这是低层客户端的又一个好处:它不诱惑你去读 body。**
 
@@ -610,6 +610,8 @@ async fn server() {
 
 **上游地址硬编码。** `"http://127.0.0.1:3000"` 写死在 handler 里。生产环境要做成配置,而且通常不止一个上游——就引出下一条。
 
+**目标地址写死,所以没有 SSRF 面——但这是脆弱的平衡。** 一旦把上游地址改成配置项(尤其是从请求里读取),就立刻引入 SSRF(Server-Side Request Forgery):恶意客户端可以诱导代理去访问内网服务或云厂商的元数据地址(`169.254.169.254`),把代理变成跳板。同[第 42 章](42-http-proxy.md#代价与边界)的结论:接入配置化上游时必须做目标白名单(只允许受控的上游列表)、屏蔽元数据地址、限制出网范围。本章把地址写死,反而没有这个问题。
+
 **没有负载均衡,没有健康检查。** 真实反向代理后面挂的是一组上游,需要:轮询/最少连接/一致性哈希等策略、周期性健康检查、失败节点摘除、恢复后自动加回。tower 的 `tower::balance` 和 `tower::discover` 提供了这套抽象。
 
 **没有 `X-Forwarded-*` 头。** 步骤 7 详细说了。这是**反向代理最常被遗漏的一件事**。
@@ -700,7 +702,7 @@ req.headers_mut().insert("x-forwarded-proto", "http".parse().unwrap());
 
 `path_and_query()` 而不是 `path()` —— 后者会**丢掉查询字符串**,是写代理最容易踩的坑。
 
-客户端选了 `hyper-util` 的 `legacy::Client` 而不是 `reqwest`,因为它**直接吃 `http::Request`**,正好对上我们手里的东西;而且返回的 `Response<Incoming>` 一个 `.into_response()` 就成了 axum 的响应,**天然流式**——[第 41 章](41-reqwest-response.md)费一整章讲的"别缓冲",在这里没有犯错的余地。`legacy` 只是 hyper 1.0 拆分后的过渡命名,不是废弃。
+客户端选了 `hyper-util` 的 `legacy::Client` 而不是 `reqwest`,因为它**直接吃 `http::Request`**,正好对上手里已有的东西;而且返回的 `Response<Incoming>` 一个 `.into_response()` 就成了 axum 的响应,**天然流式**——[第 41 章](41-reqwest-response.md)费一整章讲的"别缓冲",在这里没有犯错的余地。`legacy` 只是 hyper 1.0 拆分后的过渡命名,不是废弃。
 
 步骤 6 和步骤 7 揭示了这个示例的两个重要边界:**只代理了 `GET /` 一条路由**(改成 `fallback` 即可),以及**没有加 `X-Forwarded-*` 头**,导致上游完全不知道真实客户端是谁——IP 限流、访问日志、地理判断全部失效。这是反向代理最常被遗漏的一件事。
 

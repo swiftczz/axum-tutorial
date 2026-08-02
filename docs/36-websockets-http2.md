@@ -701,11 +701,6 @@ async fn ws_handler(
 }
 ```
 
-证书文件(用[第 32 章](32-tls-rustls.md#生成证书)的 openssl 命令生成):
-
-- `self_signed_certs/cert.pem`
-- `self_signed_certs/key.pem`
-
 ## 代价与边界
 
 **这个组合本身就是小众选择。** 前置知识讲过:支持面窄(Safari 有问题、很多代理不支持)、收益有限(省一次握手,而 WebSocket 是长连接)、HTTP/3 是更好的方向。**默认用 HTTP/1.1 的 WebSocket 就好**,除非有明确理由。

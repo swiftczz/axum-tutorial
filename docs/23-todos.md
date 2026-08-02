@@ -30,10 +30,10 @@ REST 不是协议也不是标准,是一套关于"怎么设计 HTTP API"的惯例
 **URL 标识资源,不描述动作。**
 
 ```
-✓ /todos           待办事项集合
-✓ /todos/{id}      单个待办事项
-✗ /getTodos        动作跑进了 URL
-✗ /todos/delete    同上
+可以 /todos           待办事项集合
+可以 /todos/{id}      单个待办事项
+不行 /getTodos        动作跑进了 URL
+不行 /todos/delete    同上
 ```
 
 **方法表达动作。** 同一个 URL 配不同方法就是不同操作——这也是[第 02 章](02-routes-and-handlers-close-together.md#router-与-methodrouter-的分工)讲的 `MethodRouter` 存在的意义:

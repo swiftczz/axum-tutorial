@@ -9,7 +9,7 @@ GET /ws     WebSocket 端点
 GET /       浏览器页面(JS 客户端)
 ```
 
-外加一个 Rust 客户端(`src/client.rs`),同时开两条连接压测服务端。这是本教程第一个**多可执行文件**的项目。
+外加一个 Rust 客户端(`src/bin/client.rs`),同时开两条连接压测服务端。这是本教程第一个**多可执行文件**的项目。
 
 服务端会先 ping、收一条消息、连发 4 条问候,然后**把连接拆成读写两半**并发工作:一个任务持续推 20 条消息,另一个任务持续接收客户端消息。
 
@@ -189,32 +189,18 @@ tokio::select! {
 
 **为什么要 `abort()` 而不是让它自己结束?** 因为另一个任务可能正阻塞在 `receiver.next().await` 上,永远等不到消息。不主动取消它会一直挂着,泄露资源。
 
-### 一个项目多个二进制
-
-本章的 `Cargo.toml` 有两个 `[[bin]]` 段:
-
-```toml
-[[bin]]
-name = "example-websockets"
-path = "src/main.rs"
-
-[[bin]]
-name = "example-client"
-path = "src/client.rs"
-```
-
 **这让一个 crate 产出两个可执行文件。** 用途:服务端和客户端共享依赖和类型定义,但分开运行。
 
 运行时用 `--bin` 指定:
 
 ```bash
-cargo run --bin example-websockets
-cargo run --bin example-client
+cargo run
+cargo run --bin client
 ```
 
-约定俗成的做法是把额外的二进制放 `src/bin/` 目录下,那样连 `[[bin]]` 声明都不需要。官方示例显式声明是为了自定义名字。
+约定俗成的做法是把额外的二进制放 `src/bin/` 目录下:文件名就是 bin 名,连 `[[bin]]` 声明都不需要。官方示例放在 `src/` 并用 `[[bin]]` 显式声明,是为了自定义 `example-*` 名字;教程项目叫 `websockets`,默认 bin 名就是 `websockets`,`src/bin/client.rs` 自动叫 `client`。
 
-**注意 `src/main.rs` 和 `src/client.rs` 是两个独立的 crate 根**,彼此看不到对方的类型——不是模块关系。
+**注意 `src/main.rs` 和 `src/bin/client.rs` 是两个独立的 crate 根**,彼此看不到对方的类型——不是模块关系。
 
 ## 项目搭建
 
@@ -235,21 +221,15 @@ cargo add tracing
 cargo add tracing-subscriber --features env-filter
 ```
 
+```bash
+mkdir src/bin
+```
+
+第二个可执行文件就放这里,`client.rs` 直接写在 `src/` 下不会被编译。
+
 **`axum` 的 `ws` feature 必须显式开启**,默认不带。
 
-`tokio-tungstenite` 是**客户端**用的(`src/client.rs`),服务端不需要——axum 内部已经用了 tungstenite。
-
-在 `Cargo.toml` 里加上两个二进制声明:
-
-```toml
-[[bin]]
-name = "example-websockets"
-path = "src/main.rs"
-
-[[bin]]
-name = "example-client"
-path = "src/client.rs"
-```
+`tokio-tungstenite` 是**客户端**用的(`src/bin/client.rs`),服务端不需要——axum 内部已经用了 tungstenite。
 
 ### 前端页面
 
@@ -457,7 +437,7 @@ fn process_message(msg: Message, who: SocketAddr) -> ControlFlow<(), ()> {
 **跑起来看**:
 
 ```bash
-cargo run --bin example-websockets
+cargo run
 ```
 
 用 `websocat` 测试(如果没装:`brew install websocat` 或 `cargo install websocat`):
@@ -628,7 +608,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
 **跑起来看**:
 
 ```bash
-cargo run --bin example-websockets
+cargo run
 ```
 
 用 `websocat` 交互测试:
@@ -728,7 +708,7 @@ async fn main() {
 **跑起来看**:
 
 ```bash
-cargo run --bin example-websockets
+cargo run
 ```
 
 浏览器访问 `http://localhost:3000/`,按 F12 打开控制台,**刷新页面**(脚本在加载时就发起连接):
@@ -766,10 +746,10 @@ Websocket context 127.0.0.1:54323 destroyed
 
 ### 步骤 4:Rust 客户端
 
-**要做什么**:写 `src/client.rs`,用两条并发连接测试服务端。
+**要做什么**:写 `src/bin/client.rs`,用两条并发连接测试服务端。
 
 ```rust
-// src/client.rs
+// src/bin/client.rs
 use futures_util::{SinkExt, StreamExt};
 use std::ops::ControlFlow;
 use std::time::Instant;
@@ -941,13 +921,13 @@ while clients.join_next().await.is_some() {}
 先启动服务端:
 
 ```bash
-cargo run --bin example-websockets
+cargo run
 ```
 
 另开一个终端跑客户端:
 
 ```bash
-cargo run --bin example-client
+cargo run --bin client
 ```
 
 客户端输出(两个客户端交错):
@@ -1248,7 +1228,7 @@ fn process_message(msg: Message, who: SocketAddr) -> ControlFlow<(), ()> {
 }
 ```
 
-`src/client.rs`:
+`src/bin/client.rs`:
 
 ```rust
 use futures_util::{SinkExt, StreamExt};
@@ -1400,18 +1380,6 @@ fn process_message(msg: Message, who: usize) -> ControlFlow<(), ()> {
 }
 ```
 
-`Cargo.toml` 的二进制声明:
-
-```toml
-[[bin]]
-name = "example-websockets"
-path = "src/main.rs"
-
-[[bin]]
-name = "example-client"
-path = "src/client.rs"
-```
-
 ## 代价与边界
 
 **心跳要自己实现。** 这是 WebSocket 相对 SSE 最大的额外负担。
@@ -1468,6 +1436,6 @@ WebSocket 用 HTTP 握手(`101 Switching Protocols`),**握手之后这条连接�
 
 还有一个极易遗漏的安全问题:**WebSocket 不受同源策略约束**,任何网站的 JS 都能连你的端点而且浏览器会带上 cookie(Cross-Site WebSocket Hijacking)。必须在握手时校验 `Origin`。
 
-顺带认识了一个 Cargo 技巧:多个 `[[bin]]` 段让一个项目产出多个可执行文件,服务端和客户端共享依赖但分开运行。
+顺带认识了一个 Cargo 技巧:`src/bin/` 下的每个文件自动成为一个可执行文件,服务端和客户端共享依赖但分开运行。
 
 WebSocket 的收发是异步、双向、并发的,这让它比普通 handler 难测得多——不能像[第 21 章](21-testing.md#oneshot-与-readycall)那样 `oneshot` 发一个请求断言响应。[第 35 章 testing-websockets](35-testing-websockets.md) 讲怎么测:内存里直接驱动 `WebSocket` 的办法、以及什么时候不得不起真实服务器。

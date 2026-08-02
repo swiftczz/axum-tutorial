@@ -101,7 +101,7 @@ axum 的默认 feature 里有一个 `tokio`,它会拉进 `tokio` 的网络能力
 axum = { version = "0.8", default-features = false }
 ```
 
-**关掉之后,`axum::serve` 就不存在了** —— 这正是我们想要的,反正也用不上。
+**关掉之后,`axum::serve` 就不存在了** —— 这正是你想要的,反正也用不上。
 
 **但顺带被关掉的还有一批常用东西:**
 
@@ -123,14 +123,7 @@ cargo add axum --no-default-features --features json,query,form
 
 官方示例全关了,因为它只用 `get(index)` 和 `Html`,**什么提取器都没用到**。步骤 4 会把这些加回来验证。
 
-> 官方示例的 `Cargo.toml` 里还有个有意思的细节:
->
-> ```toml
-> [package.metadata.cargo-machete]
-> ignored = ["axum-extra"]
-> ```
->
-> `cargo-machete` 是检查"声明了但没用到的依赖"的工具。这里显式忽略 `axum-extra`,配合源码注释「we don't strictly use axum-extra in this example but wanna make sure that works in wasm as well」—— **这个依赖存在的唯一目的是让 CI 验证 `axum-extra` 也能编到 wasm。**
+> 官方示例的 `Cargo.toml` 里还有个有意思的细节:它声明了 `axum-extra` 却从不使用,并在 `[package.metadata.cargo-machete]` 里显式忽略它——`cargo-machete` 是检查"声明了但没用到的依赖"的工具。配合源码注释「we don't strictly use axum-extra in this example but wanna make sure that works in wasm as well」可以看出来:**这个依赖存在的唯一目的是让 CI 验证 `axum-extra` 也能编到 wasm。**
 
 ### `futures_executor::block_on`
 
@@ -154,7 +147,7 @@ let response: Response = block_on(app(request));
 
 **它够用,是因为这里的 future 从头到尾不会真正挂起** —— 路由匹配、提取器、handler 全是纯计算,没有任何 IO。**第一次轮询就跑完了。**
 
- **这也是它的边界**:如果 handler 里 `.await` 了一个真正需要等待的东西(网络请求、定时器),`block_on` 会**死等**,因为没有任何人会来唤醒它。真实的 serverless 运行时会提供自己的异步集成(Cloudflare Workers 的 `worker` crate、Lambda 的 `lambda_runtime`),**别把 `block_on` 当通用方案**。
+**这也是它的边界**:如果 handler 里 `.await` 了一个真正需要等待的东西(网络请求、定时器),`block_on` 会**死等**,因为没有任何人会来唤醒它。真实的 serverless 运行时会提供自己的异步集成(Cloudflare Workers 的 `worker` crate、Lambda 的 `lambda_runtime`),**别把 `block_on` 当通用方案**。
 
 ### `router.call(request)`
 
@@ -293,7 +286,7 @@ cargo build --target wasm32-unknown-unknown
 ls -lh target/wasm32-unknown-unknown/debug/*.wasm
 ```
 
- **注意这个 wasm 文件不能直接"运行"**。`wasm32-unknown-unknown` 没有任何系统接口,连 `println!` 都没地方输出。它要被一个宿主环境加载——浏览器、Cloudflare Workers 的运行时、或者 `wasm-bindgen` 生成的胶水代码。
+**注意这个 wasm 文件不能直接"运行"**。`wasm32-unknown-unknown` 没有任何系统接口,连 `println!` 都没地方输出。它要被一个宿主环境加载——浏览器、Cloudflare Workers 的运行时、或者 `wasm-bindgen` 生成的胶水代码。
 
 **本章验证的是"能不能编"**,这也正是官方示例的定位(源码注释:「This example should always compile with `--target wasm32-unknown-unknown`」)。
 
@@ -542,18 +535,7 @@ cargo tree --target wasm32-unknown-unknown -i mio      # 反查谁依赖了它
 
 **5. 优化 wasm 体积。**
 
-提示:在 `Cargo.toml` 加:
-
-```toml
-[profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
-strip = true
-panic = "abort"
-```
-
-对比优化前后的 `.wasm` 大小。再装个 `wasm-opt`(`binaryen` 包里)跑一遍 `wasm-opt -Oz`。**冷启动时间和这个数字直接相关。**
+提示:在 `Cargo.toml` 的 `[profile.release]` 下加五个键:`opt-level = "z"`(为体积优化)、`lto = true`(跨 crate 链接期优化)、`codegen-units = 1`(单编译单元)、`strip = true`(剥离符号表)、`panic = "abort"`(panic 不展开栈)。对比优化前后的 `.wasm` 大小。再装个 `wasm-opt`(`binaryen` 包里)跑一遍 `wasm-opt -Oz`。**冷启动时间和这个数字直接相关。**
 
 **6.(进阶)真正部署一次。**
 
@@ -582,7 +564,7 @@ cargo add lambda_http
 
 ---
 
-## 全书结语
+### 全书结语
 
 **55 章,54 个官方示例,到这里全部走完了。**
 

@@ -37,7 +37,7 @@
 
 三个页面共享导航菜单和 `<html>` 骨架,内容各不相同。如果每个模板都写一遍完整的 HTML,改导航就要改三个文件——这是典型的重复。
 
-Jinja2 系模板引擎用**继承**解决它。先写一个**布局模板**(layout),把公共部分固定下来,把会变化的地方开出**占位块**(block):
+Jinja2 系模板引擎用**继承**(template inheritance)解决它。先写一个**布局模板**(layout),把公共部分固定下来,把会变化的地方开出**占位块**(block):
 
 ```html
 <!doctype html>
@@ -666,7 +666,7 @@ async fn handler_about(State(state): State<Arc<AppState>>) -> Result<Html<String
 }
 ```
 
-## 两种模板方案的对照
+### 两种模板方案的对照
 
 学完两章,可以把 askama 和 minijinja 摆在一起看:
 

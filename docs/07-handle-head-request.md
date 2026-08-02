@@ -107,7 +107,7 @@ async fn get_head_handler(method: http::Method) -> Response
 
 这是两个不同的类型,用 `impl IntoResponse` 编译不过。解法是两个分支都调用 `.into_response()` 转成统一的 `Response` 类型——`Response` 是 axum 里响应的"擦除类型后"的统一表示。
 
-这个套路很常用:**handler 有多个返回形态时,返回 `Response` 并在每个分支末尾加 `.into_response()`。** 另一种解法是用 `Result<T, E>`([第 05 章](05-templates-minijinja.md#步骤-1布局模板-首页认识-state)用过),但那适合"成功/失败"的二分,不适合本章这种"两种成功形态"。
+这个套路很常用:**handler 有多个返回形态时,返回 `Response` 并在每个分支末尾加 `.into_response()`。** 另一种解法是用 `Result<T, E>`([第 05 章](05-templates-minijinja.md#步骤-1布局模板--首页-认识-state)用过),但那适合"成功/失败"的二分,不适合本章这种"两种成功形态"。
 
 ## 项目搭建
 

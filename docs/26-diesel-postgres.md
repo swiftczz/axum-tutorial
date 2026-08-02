@@ -299,6 +299,16 @@ DROP TABLE "users";
 
 **目录名的格式是 `时间戳_名称`**,diesel 按它排序决定执行顺序。真实项目用 `diesel migration generate add_users` 生成,时间戳自动填。
 
+**diesel_cli 是 diesel 的命令行工具**,安装命令:
+
+```bash
+cargo install diesel_cli --no-default-features --features postgres
+```
+
+macOS 上若报 `libpq` 相关错误,先 `brew install libpq` 并把它的 `bin` 目录加进 `PATH`。它的核心命令:`diesel migration generate <名称>` 生成带时间戳的迁移目录、`diesel migration run` 按序执行未应用的迁移、`diesel migration revert` 回滚最近一次、`diesel setup` 创建数据库并建 `__diesel_schema_migrations` 表。
+
+本章教程**不用** CLI——`embed_migrations!` 把迁移嵌进二进制、启动时自动执行(见前置知识),部署只需要一个二进制。但你要新建迁移或手动控制执行时机时,CLI 是标准途径,生成的目录名自动带时间戳,比手敲 `2023-03-14-180127` 可靠。
+
 ### 环境变量
 
 示例用 `std::env::var("DATABASE_URL").unwrap()`,**没有默认值**——不设置直接 panic。
@@ -414,7 +424,7 @@ cargo run
 ```
 
 ```
-listening on 127.0.0.1:3000
+DEBUG diesel_postgres: listening on 127.0.0.1:3000
 ```
 
 验证迁移真的执行了:
@@ -825,7 +835,6 @@ where
 }
 ```
 
-环境变量:`DATABASE_URL`(必需,没有默认值)
 
 ## 代价与边界
 

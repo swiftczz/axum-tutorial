@@ -280,7 +280,7 @@ cargo run
 ```
 
 ```
-listening on 127.0.0.1:3000
+DEBUG diesel_async_postgres: listening on 127.0.0.1:3000
 ```
 
 确认迁移执行了:
@@ -501,7 +501,7 @@ curl -s -X POST http://127.0.0.1:3000/user/create \
 
 行为不变。
 
-## 三套 PostgreSQL 方案的完整对比
+### 三套 PostgreSQL 方案的完整对比
 
 第 24 到 27 章介绍了四个示例、三套方案。这里做个总的选型参考。
 
@@ -536,8 +536,6 @@ curl -s -X POST http://127.0.0.1:3000/user/create \
 **一个实际提醒**:这三套都不是"选了就锁死"的决定,但迁移成本确实不低——查询代码、模型定义、错误处理都要重写。**项目早期花半天做个原型对比,比后期迁移划算得多。**
 
 ## 完整代码
-
-`migrations/2023-03-14-180127_add_users/up.sql` 和 `down.sql` 与[第 26 章](26-diesel-postgres.md#完整代码)相同。
 
 `src/main.rs`:
 
@@ -671,8 +669,6 @@ where
     (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
 }
 ```
-
-环境变量:`DATABASE_URL`(必需)
 
 ## 代价与边界
 

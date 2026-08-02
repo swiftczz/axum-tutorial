@@ -614,11 +614,6 @@ async fn redirect_http_to_https(ports: Ports) {
 }
 ```
 
-证书文件(用前面的 `openssl` 命令生成):
-
-- `self_signed_certs/cert.pem`
-- `self_signed_certs/key.pem`
-
 ## 代价与边界
 
 **生产环境通常不在应用里做 TLS。** 这是本章最重要的一条。主流做法是**反向代理终止 TLS**:

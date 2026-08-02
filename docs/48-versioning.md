@@ -335,7 +335,7 @@ async fn handler(version: Version) -> Html<String> {
 
 **③ `.map_err(IntoResponse::into_response)`**
 
-`Path` 的拒绝类型是 `PathRejection`([第 11 章](11-customize-path-rejection.md)的主题),而我们声明的 `Rejection` 是 `Response`,所以要转一下。`IntoResponse::into_response` 直接当函数用,比写闭包简洁。
+`Path` 的拒绝类型是 `PathRejection`([第 11 章](11-customize-path-rejection.md)的主题),而你声明的 `Rejection` 是 `Response`,所以要转一下。`IntoResponse::into_response` 直接当函数用,比写闭包简洁。
 
 **什么时候会走到这个分支?** 路由里根本没有路径参数的时候(比如把 `Version` 用在 `/health` 上)。
 
@@ -495,7 +495,7 @@ HTTP/1.1 200 OK
 bar, version V1
 ```
 
-** `/v1/bar` 也返回了 200。**
+**`/v1/bar` 也返回了 200。**
 
 **这是一个静默的兼容性事故:**
 

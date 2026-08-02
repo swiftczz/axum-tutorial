@@ -143,7 +143,7 @@ http_requests_duration_seconds_count 7
 
 **好处是业务代码不绑定具体的监控系统。** 想换成 StatsD 或 OpenTelemetry,只换记录器,`counter!` 那些调用一行不用动。
 
- **没有安装记录器时,`counter!` 是静默的空操作。** 不报错、不 panic,数据直接丢弃。这个特性很方便(库作者可以随便埋点,不强迫使用者装记录器),但也意味着**忘了安装记录器时你不会收到任何提示**。
+**没有安装记录器时,`counter!` 是静默的空操作。** 不报错、不 panic,数据直接丢弃。这个特性很方便(库作者可以随便埋点,不强迫使用者装记录器),但也意味着**忘了安装记录器时你不会收到任何提示**。
 
 ```rust
 let recorder_handle = PrometheusBuilder::new().install_recorder().unwrap();
@@ -208,7 +208,7 @@ axum 提供了一个提取器,拿到的是**匹配上的路由模板**,而不是
 1. **能读到 `MatchedPath`**(虽然 `layer` 在 axum 里也能读到,因为路由匹配发生在中间件之前;但 `layer` 会对 404 也执行,那时 `MatchedPath` 不存在)
 2. **扫描器的垃圾流量不会被统计** —— 公网上每天有大量机器人请求 `/wp-admin`、`/.env` 之类的路径,如果给这些 404 也记指标,又是一场基数爆炸
 
- **一个共同的坑:`layer` 和 `route_layer` 只对"在它之前注册的路由"生效。** 之后再 `.route(...)` 加的路由不会被包住。这个规则很容易忘,而且**失败方式是静默的**(那条路由的指标就是没有)。
+**一个共同的坑:`layer` 和 `route_layer` 只对"在它之前注册的路由"生效。** 之后再 `.route(...)` 加的路由不会被包住。这个规则很容易忘,而且**失败方式是静默的**(那条路由的指标就是没有)。
 
 ## 项目搭建
 
@@ -226,7 +226,7 @@ cargo add tracing
 cargo add tracing-subscriber --features env-filter
 ```
 
-`--no-default-features` 关掉了这两个 crate 里我们用不上的部分(比如 `metrics-exporter-prometheus` 自带的 HTTP 服务器——我们要用 axum 自己提供 `/metrics`)。
+`--no-default-features` 关掉了这两个 crate 里用不上的部分(比如 `metrics-exporter-prometheus` 自带的 HTTP 服务器——要用 axum 自己提供 `/metrics`)。
 
 ## 分步构建
 

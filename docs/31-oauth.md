@@ -751,16 +751,10 @@ curl -i -s 'http://127.0.0.1:3000/auth/authorized?code=fake&state=wrong' | head 
 ```
 
 ```
-HTTP/1.1 500 Internal Server Error
+HTTP/1.1 400 Bad Request
 ```
 
-服务端日志:
-
-```
-ERROR oauth: Application error: unexpected error getting cookie name
-```
-
-没带 cookie 就直接失败了。**这正是防 CSRF 的效果** —— 攻击者伪造的回调 URL 里没有受害者的 session cookie(或者即使浏览器带上了,session 里的 state 也和伪造的对不上)。
+**handler 根本没执行。** `TypedHeader<headers::Cookie>` 是 `login_authorized` 的参数,请求没带 cookie 时,axum-extra 在提取器层就返回 `400`——连 handler 的第一行都到不了,`state` 校验代码没有机会运行,日志里也不会有 `Application error`。**这正是防 CSRF 的效果**:攻击者伪造的回调 URL 里没有受害者的 session cookie(或者即使浏览器带上了,session 里的 state 也和伪造的对不上),在被业务代码看到之前就被挡下了。
 
 ### 步骤 4:身份提取器与其余路由
 
@@ -1364,8 +1358,6 @@ where
     }
 }
 ```
-
-环境变量:`CLIENT_ID`、`CLIENT_SECRET`(必需),`REDIRECT_URL`、`AUTH_URL`、`TOKEN_URL`(可选)
 
 ## 代价与边界
 

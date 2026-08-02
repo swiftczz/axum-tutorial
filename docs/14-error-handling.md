@@ -68,7 +68,7 @@ async fn users_create(...) -> Result<AppJson<User>, AppError> {
 }
 ```
 
-`Result<T, E>` 实现 `IntoResponse` 的前提是 `T` 和 `E` 都实现——[第 05 章](05-templates-minijinja.md#步骤-1布局模板-首页认识-state)提过一次。
+`Result<T, E>` 实现 `IntoResponse` 的前提是 `T` 和 `E` 都实现——[第 05 章](05-templates-minijinja.md#步骤-1布局模板--首页-认识-state)提过一次。
 
 ### 为什么不能在 into_response 里记日志
 
@@ -718,7 +718,7 @@ async fn users_create(
 
 **`make_span_with` 自定义 span 的字段**:方法、URI、匹配到的路由模式。`%method` 和 `%uri` 是 tracing 的 `Display` 前缀。`MatchedPath` 从请求扩展里取——[第 10 章](10-customize-extractor-error.md#matchedpath拿到路由模式而非实际路径)讲过它和 `Uri` 的区别,以及为什么做监控时前者更有用。
 
-**`.on_failure(())`** 关掉 `TraceLayer` 自带的 5xx 日志。不关的话每个内部错误会被记两次——一次来自 `TraceLayer`,一次来自我们的中间件。传 `()` 表示"什么都不做",这是 `tower-http` 的一个约定。
+**`.on_failure(())`** 关掉 `TraceLayer` 自带的 5xx 日志。不关的话每个内部错误会被记两次——一次来自 `TraceLayer`,一次来自你的中间件。传 `()` 表示"什么都不做",这是 `tower-http` 的一个约定。
 
 **`AppState` 部分是示例的脚手架**,不是本章重点:`AtomicU64` 生成自增 ID,`Arc<Mutex<HashMap>>` 存用户。
 
