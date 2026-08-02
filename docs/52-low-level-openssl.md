@@ -318,7 +318,7 @@ curl -i http://[::1]:3000/
 服务端日志:
 
 ```
-ERROR example_low_level_openssl: error during tls handshake connection from [::1]:54321: error:0A00010B:SSL routines:ssl3_get_record:wrong version number
+ERROR low_level_openssl: error during tls handshake connection from [::1]:54321: error:0A00010B:SSL routines:ssl3_get_record:wrong version number
 ```
 
 **`wrong version number`** —— 这就是有错误详情和没有的差别。这条信息一眼就能看出"对方发的不是 TLS"。[第 50 章](50-low-level-rustls.md)那个 `let ... else` 版本只会告诉你"握手失败了",什么原因得靠猜。

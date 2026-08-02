@@ -569,7 +569,7 @@ curl -v -x "127.0.0.1:3000" https://tokio.rs
 服务端日志:
 
 ```
-DEBUG example_http_proxy: client wrote 1234 bytes and received 56789 bytes
+DEBUG http_proxy: client wrote 1234 bytes and received 56789 bytes
 ```
 
 这是 `copy_bidirectional` 的返回值——**代理对这次通信的全部认知,就是两个字节数**。

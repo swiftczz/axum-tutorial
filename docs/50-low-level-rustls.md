@@ -449,7 +449,7 @@ curl: (52) Empty reply from server
 服务端日志:
 
 ```
-ERROR example_low_level_rustls: error during tls handshake connection from [::1]:54321
+ERROR low_level_rustls: error during tls handshake connection from [::1]:54321
 ```
 
 **这条连接被放弃了,服务继续跑。** 再 `curl -k https://...` 一次,一切正常。

@@ -401,8 +401,8 @@ cargo run
 ```
 
 ```
-DEBUG example_tls_graceful_shutdown: listening on 127.0.0.1:3000
-DEBUG example_tls_graceful_shutdown: listening on 127.0.0.1:7878
+DEBUG tls_graceful_shutdown: listening on 127.0.0.1:3000
+DEBUG tls_graceful_shutdown: listening on 127.0.0.1:7878
 ```
 
 先确认基本功能([第 32 章](32-tls-rustls.md#步骤-2http-重定向到-https)验证过,快速过一遍):
@@ -419,7 +419,7 @@ location: https://localhost:3000/foo
 现在验证停机。按 **Ctrl-C**:
 
 ```
- INFO example_tls_graceful_shutdown: Received termination signal shutting down
+ INFO tls_graceful_shutdown: Received termination signal shutting down
 ```
 
 **进程干净退出,而且留下了日志。**

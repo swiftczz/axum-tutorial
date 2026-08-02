@@ -170,7 +170,9 @@ cargo add tower --dev --features util
 
 `tower` 放在 `[dev-dependencies]` 里,因为 `ServiceExt` 只有测试用得到。这样正式构建不会带上它。
 
-`hyper-util` 提供测试里那个真实 HTTP 客户端。`mime` 用来写 `Content-Type` 常量,避免手写字符串。
+`mime` 用来写 `Content-Type` 常量,避免手写字符串。
+
+> **本章不深入**:`hyper-util` 是 hyper 官方的辅助库,本章只用它提供的 HTTP 客户端去请求一个真实启动的服务器,照抄即可。这个客户端和 `reqwest` 的分工、以及它为什么叫 `legacy`,见[第 43 章](43-reverse-proxy.md#hyper-util-的客户端和-reqwest-的分工);hyper 在服务端那一侧的位置见[第 44 章](44-serve-with-hyper.md)。
 
 ## 分步构建
 

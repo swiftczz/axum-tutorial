@@ -271,7 +271,7 @@ RUST_LOG=debug cargo run
 ```
 
 ```
- INFO example_low_level_native_tls: HTTPS server listening on [::1]:3000. ...
+ INFO low_level_native_tls: HTTPS server listening on [::1]:3000. ...
 ```
 
 **加了 `RUST_LOG` 就有了。** 说明日志本身没问题,是**默认的过滤规则**有问题。
@@ -288,7 +288,7 @@ RUST_LOG=debug cargo run
 
 **`example_low_level_rustls`。**
 
-而本项目的 crate 叫 **`example_low_level_native_tls`**(或者你 `cargo new` 时起的名字)。
+而本项目的 crate 叫 **`low_level_native_tls`**——你用 `cargo new low-level-native-tls` 建的项目,crate 名就是把连字符换成下划线。
 
 **这是一个从[第 50 章](50-low-level-rustls.md)那个示例复制过来时没改的名字。** `EnvFilter` 的指令说的是"把 `example_low_level_rustls` 这个目标开到 debug",而本 crate 的日志目标和它对不上,于是**全被过滤掉了**。
 
@@ -317,7 +317,7 @@ cargo run
 ```
 
 ```
- INFO example_low_level_native_tls: HTTPS server listening on [::1]:3000. To contact curl -k https://localhost:3000
+ INFO low_level_native_tls: HTTPS server listening on [::1]:3000. To contact curl -k https://localhost:3000
 ```
 
 **日志回来了。**

@@ -415,10 +415,10 @@ DEBUG request{method=GET uri=/ version=HTTP/1.1}: tower_http::trace::on_request:
 DEBUG request{method=GET uri=/stream version=HTTP/1.1}: tower_http::trace::on_request: started processing request
 DEBUG request{method=GET uri=/stream ...}: tower_http::trace::on_response: finished processing request latency=0 ms status=200
 DEBUG request{method=GET uri=/ ...}: tower_http::trace::on_response: finished processing request latency=1 ms status=200
-DEBUG request{method=GET uri=/stream ...}: example_reqwest_response: streaming 1 bytes
-DEBUG request{method=GET uri=/ ...}: example_reqwest_response: streaming 1 bytes
-DEBUG request{method=GET uri=/stream ...}: example_reqwest_response: streaming 1 bytes
-DEBUG request{method=GET uri=/ ...}: example_reqwest_response: streaming 1 bytes
+DEBUG request{method=GET uri=/stream ...}: reqwest_response: streaming 1 bytes
+DEBUG request{method=GET uri=/ ...}: reqwest_response: streaming 1 bytes
+DEBUG request{method=GET uri=/stream ...}: reqwest_response: streaming 1 bytes
+DEBUG request{method=GET uri=/ ...}: reqwest_response: streaming 1 bytes
 ...
 ```
 

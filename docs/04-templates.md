@@ -120,6 +120,8 @@ mkdir templates
 注意这个目录和你的项目同名(项目叫 `templates`,目录也叫 `templates`),路径会是 `templates/templates/hello.html`。看着有点绕,但这是官方示例的命名,照做即可。目录里的文件在步骤 2 创建。
 
 > 本章会渲染 HTML 页面,但**不涉及给页面配 CSS、JS、图片**。托管这类静态资源需要 `tower-http` 的 `ServeDir`,那是[第 38 章 static-file-server](38-static-file-server.md) 的内容。现在页面是裸 HTML,不好看是正常的。
+>
+> **在那之前想让它别太难看,把样式直接写进模板就行**:在 `hello.html` 里加一个 `<style>` 块,浏览器一样会应用。这是权宜之计——样式和结构混在一起没法跨页面复用,也吃不到浏览器对独立 `.css` 文件的缓存,但对单页练习足够了。章末"完整代码"保持官方示例原样,不含这段。
 
 ## 分步构建
 

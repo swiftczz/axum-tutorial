@@ -348,6 +348,8 @@ async fn ws_handler(
 
 **TLS 部分和[第 32 章](32-tls-rustls.md#步骤-1跑起-https-服务)一模一样**:`RustlsConfig::from_pem_file` + `axum_server::bind_rustls` + `into_make_service()`。
 
+**`fallback_service(ServeDir::new(...))`** 和[第 33](33-sse.md#步骤-3配上前端页面)、[34 章](34-websockets.md)一样,把 `assets/` 目录当静态文件兜底;`ServeDir` 的完整用法见[第 38 章](38-static-file-server.md)。
+
 **`broadcast::channel::<String>(16).0`** 前置知识讲过:取 `Sender` 当状态,每个连接自己 `subscribe()`。
 
 **`version: Version`** 是本步骤的观察点。
