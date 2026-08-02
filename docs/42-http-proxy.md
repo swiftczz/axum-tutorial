@@ -300,7 +300,7 @@ HTTP 头名本来就是大小写不敏感的,但**代理场景要尽量原样转
 
 每来一条连接就 spawn 一个任务,这样多个连接能并发处理。**这就是 `axum::serve` 内部做的事。**
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -380,7 +380,7 @@ async fn proxy(req: Request) -> Result<Response, hyper::Error> {
 
 注意两个分支的返回类型要一致:`proxy` 返回 `Result<Response, hyper::Error>`,所以另一分支的 `map_err(|err| match err {})` 就被推断成产出 `hyper::Error`——前置知识讲的 `Infallible` 消除在这里派上用场。
 
-**验证**(现在还没有真正的隧道,但能看到分流生效):
+**跑起来看**(现在还没有真正的隧道,但能看到分流生效):
 
 ```bash
 cargo run
@@ -521,7 +521,7 @@ b 读到的 → 写给 a
 
 **注意 `upgraded` 里流动的是什么**:TLS 握手报文、加密的 HTTP 请求和响应。**我们的代码完全不 care**,它看到的只是 `&[u8]`。这就是隧道的本质。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run

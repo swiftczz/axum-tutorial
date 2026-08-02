@@ -239,7 +239,7 @@ fn native_tls_acceptor(key_file: PathBuf, cert_file: PathBuf) -> NativeTlsAccept
 
 > **这就是分层抽象的价值**:换了整套 TLS 实现,上层的 HTTP 处理代码零改动。[第 50 章](50-low-level-rustls.md#tls-握手在连接生命周期里的位置)说过"上层完全不用知道下面是不是加密的",这一章进一步证明了"也不用知道是哪家实现的加密"。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run

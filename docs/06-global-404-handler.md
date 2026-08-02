@@ -298,7 +298,52 @@ nothing to see here
 nothing to see here
 ```
 
-### 步骤 3:验证 fallback 管不到 405
+### 步骤 3:故意丢掉状态码
+
+**要做什么**:临时去掉 `StatusCode::NOT_FOUND`,亲眼看一次"有 body、状态码却错了"的静默失败。
+
+把 `handler_404` 临时改成只返回字符串:
+
+```rust
+async fn handler_404() -> impl IntoResponse {
+    // 临时改动:丢掉 StatusCode::NOT_FOUND
+    "nothing to see here"
+}
+```
+
+重新运行后访问不存在的路径:
+
+```bash
+cargo run
+```
+
+```bash
+curl -i http://127.0.0.1:3000/nope
+```
+
+```
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 20
+
+nothing to see here
+```
+
+**关键在于:服务没有报错、没有 panic,body 也还在——只是状态码悄悄变成了 `200`。** 对浏览器来说这是一次成功响应;对监控来说"404 率"是零;对前端路由来说,本来该进错误页的请求被当成正常页面渲染。真实项目里这类 bug 往往以"偶发空白页"或"SEO 收录了错误 URL"的面貌出现,排查时最容易被忽略的就是状态码。
+
+`&str` 实现 `IntoResponse` 时默认就是 `200`——[第 01 章](01-hello-world.md#intoresponse返回值如何变成-http-响应)那张表里写过。元组里的 `StatusCode::NOT_FOUND` 不是装饰,少了它,fallback 就只是"换了个 body 的成功响应"。
+
+**改回来**:
+
+```rust
+async fn handler_404() -> impl IntoResponse {
+    (StatusCode::NOT_FOUND, "nothing to see here")
+}
+```
+
+再 `curl -i` 一次,确认状态码回到 `404`。
+
+### 步骤 4:验证 fallback 管不到 405
 
 **要做什么**:不写新代码,确认前置知识里那个容易踩的坑。
 
@@ -393,6 +438,6 @@ async fn handler_404() -> impl IntoResponse {
 
 `Router::fallback` 接管所有路径匹配失败的请求,fallback 处理器就是普通 handler,可以用提取器拿到请求信息。它只管第一层路由的失败——路径存在但方法不对时走的是 `MethodRouter`,归 `method_not_allowed_fallback` 管。
 
-元组 `(StatusCode, T)` 作为返回类型能同时设定状态码和 body,不必手工构造 `Response`。这是 axum 里调整响应最轻量的手段。
+元组 `(StatusCode, T)` 作为返回类型能同时设定状态码和 body,不必手工构造 `Response`。少了状态码那一项,响应会静默变成 `200`——步骤 3 亲手试过。
 
 本章的 fallback 是"路径不存在"的处理。下一章换个角度:[第 07 章 handle-head-request](07-handle-head-request.md) 讲一个容易被忽略的 HTTP 方法——`HEAD`。axum 默认会用 `GET` 的 handler 处理 `HEAD` 请求并自动丢掉 body,但有时你想显式区分它们。那一章你会看到如何用 `Method` 提取器在 handler 里判断方法,以及带自定义头部的元组返回类型。

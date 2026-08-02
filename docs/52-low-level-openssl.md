@@ -292,7 +292,7 @@ error!("error during tls handshake connection from {}: {}", addr, err);
 
 而[第 50](50-low-level-rustls.md#let-else)、[51 章](51-low-level-native-tls.md)用的是 `let ... else`,**错误值被丢掉了**。[第 50 章的「代价与边界」](50-low-level-rustls.md#代价与边界)专门批评过这一点——**本章的写法才是对的**。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run

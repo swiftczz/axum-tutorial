@@ -212,7 +212,7 @@ async fn server() {
 }
 ```
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -266,7 +266,7 @@ async fn handler(req: Request) -> Result<Response, StatusCode> {
 
 原因很直白:**代理要转发整个请求,所以要拿到整个请求。** `Request` 作为提取器必须放在**参数列表的最后**(它消费掉了整个请求,后面的提取器就没东西可提了)——[第 09 章](09-consume-body-in-extractor-or-middleware.md)讲过这个规则。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -372,7 +372,7 @@ scheme + authority 写死,path 和 query 从原请求抄。
 
 前置知识讲过:`Response<Incoming>` 直接就能变成 axum 的响应,而且是流式的。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run

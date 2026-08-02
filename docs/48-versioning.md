@@ -220,7 +220,7 @@ async fn handler(Path(version): Path<String>) -> Result<Html<String>, (StatusCod
 
 **`{version}` 是路径参数的占位语法**([第 03 章](03-form.md)之后一直在用)。它匹配路径的第一段,不管内容是什么。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -353,7 +353,7 @@ async fn handler(version: Version) -> Html<String> {
 
 > **更好的写法**:错误响应应该**告诉客户端支持哪些版本**,而不是只说 "unknown version"。比如 `"unknown version, supported: v1, v2, v3"`。客户端拿到前者只能去翻文档,拿到后者立刻就知道怎么改。**错误信息的可操作性(actionability)是 API 设计里最容易被忽略的一环。**
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -435,7 +435,7 @@ mod tests {
 
 **测试的价值在这一章特别明显**:`test_v4` 断言的是**错误路径**——状态码是 404、body 是 `unknown version`。**错误路径最容易在重构时被改坏,而且线上很难发现**(没人会盯着 404 的响应体看)。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo test
@@ -467,7 +467,7 @@ async fn bar_handler(version: Version) -> Html<String> {
 }
 ```
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run

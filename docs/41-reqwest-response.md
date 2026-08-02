@@ -215,7 +215,7 @@ tokio_stream::iter(0..5)              // Stream<Item = i32>
 
 **`String` 能进 `Body::from_stream`**,因为 `String: Into<Bytes>`。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -384,7 +384,7 @@ use tracing::Span;
 
 注意 `on_response` 和 `on_body_chunk` 的时间差:对 `/stream`,`on_response` 在**第 0 秒**就触发了(响应头立刻发出),而最后一个 `on_body_chunk` 在**第 4 秒**。**这个时间差就是流式的证据。**
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run

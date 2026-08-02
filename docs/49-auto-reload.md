@@ -201,7 +201,7 @@ async fn handler() -> Html<&'static str> {
 }
 ```
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -226,7 +226,7 @@ cargo watch -x run
 
 `-x run` 的意思是"文件变化时执行 `cargo run`"。
 
-**验证**:
+**跑起来看**:
 
 保持它开着,改一下 `handler` 的返回内容并保存。终端里会看到重新编译,然后服务重启。
 
@@ -329,7 +329,7 @@ systemfd --no-pid -s http::3000 -- cargo watch -x run
 
 **注意应用自己打印的 `listening on ...`** —— 它现在报告的是从 fd 拿到的那个地址,而不是自己 bind 的。
 
-**验证**:
+**跑起来看**:
 
 再跑一次那个循环:
 

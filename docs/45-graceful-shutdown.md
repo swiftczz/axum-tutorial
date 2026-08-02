@@ -316,7 +316,7 @@ async fn shutdown_signal() {
         .unwrap();
 ```
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -425,7 +425,7 @@ use tower_http::timeout::TimeoutLayer;
 
 > 官方示例写的是 `TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(10))`,显式指定了状态码。这个构造函数是 `tower-http` 较新版本才有的;用 crates.io 上的 `TimeoutLayer::new(...)` 结果完全一样,因为默认状态码就是 408。如果你想返回别的状态码(比如 `503 Service Unavailable`),再去查你所用版本是否支持定制。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run

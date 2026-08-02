@@ -261,7 +261,7 @@ async fn handler() -> &'static str {
 
 **这段代码[第 44 章](44-serve-with-hyper.md#步骤-1手写第一个服务)逐行讲过**,只有两处不同:绑的是 `[::1]:3000`,以及日志用 `tracing` 而不是 `eprintln!`。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -415,7 +415,7 @@ use tracing::error;
 
 **握手在 spawn 里面,不在循环里** —— 前置知识强调过,这是防止慢客户端卡死 accept 循环的关键。你可以试着把 `tls_acceptor.accept(cnx).await` 挪到 `tokio::spawn` 之前,然后用 `nc [::1] 3000` 连上去什么都不发,**整个服务就再也接不了新连接了**。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -470,7 +470,7 @@ ERROR example_low_level_rustls: error during tls handshake connection from [::1]
 
 **这些标识符是 IANA 注册的固定值**:`h2` 是 HTTP/2 over TLS,`http/1.1` 是 HTTP/1.1,`h3` 是 HTTP/3(QUIC)。**不能自己编**,写成 `b"http/2"` 客户端就认不出来了。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run

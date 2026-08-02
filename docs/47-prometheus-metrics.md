@@ -309,7 +309,7 @@ k8s 里通常是前者:业务端口进 Service,指标端口只在 Pod 上声明,
 
 **`tokio::join!` 同时跑两个服务** —— [第 44 章](44-serve-with-hyper.md#tokiojoin-vs-tokiospawn)讲过它和 `spawn` 的区别。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -355,7 +355,7 @@ move || ready(recorder_handle.render())
 
 `move` 把 `recorder_handle` 的所有权移进闭包。**`PrometheusHandle` 是可克隆的共享句柄**,和[第 46 章](46-tls-graceful-shutdown.md#axum_serverhandle-能做什么)的 `axum_server::Handle` 一个模式。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -458,7 +458,7 @@ metrics::histogram!("http_requests_duration_seconds", &labels).record(latency);
 
 `counter!` / `histogram!` 返回一个**句柄**,再调 `.increment` / `.record` 才真正写入。这是 `metrics` 0.24 的 API 风格——句柄可以复用,避免高频路径上重复查找。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -539,7 +539,7 @@ fn setup_metrics_recorder() -> PrometheusHandle {
 
 **注意 `recorder_handle.clone()`** —— spawn 出去的任务需要一份自己的句柄,原件要返回给 `/metrics` 路由用。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run

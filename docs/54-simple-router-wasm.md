@@ -251,7 +251,7 @@ async fn index() -> Html<&'static str> {
 
 **`#[allow(clippy::let_and_return)]`** 是因为 `let response = ...; response` 这种写法 clippy 会建议直接返回。示例保留中间变量是为了可读性。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run

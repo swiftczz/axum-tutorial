@@ -230,7 +230,7 @@ async fn handler() -> &'static str {
 
  `let _ = ports;` 之类的警告先忽略,`ports.http` 下一步才用上。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -394,7 +394,7 @@ where
 
 **只有当 `with_graceful_shutdown(signal)` 开始轮询它时,`signal::ctrl_c()` 才真正被调用。**
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run

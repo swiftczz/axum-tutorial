@@ -278,7 +278,7 @@ let uds = UnixListener::bind(path.clone()).unwrap();      // ③ 绑定
 
 **注意日志过滤器是 `"debug"`,一个全局级别**,不是[第 03 章](03-form.md)以来那种 `{crate}=debug`。这意味着**所有 crate 的 debug 日志都会打出来**,包括 hyper 内部的。信息量很大,调试时有用,生产环境会淹没你。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -400,7 +400,7 @@ lsof -U -a -p $(pgrep unix-domain-socket) 2>/dev/null | head
 >
 > **这就是前置知识说的那种"不需要令牌的授权"。** 更好的做法是把它做成一个中间件([第 09 章](09-consume-body-in-extractor-or-middleware.md))或提取器([第 48 章](48-versioning.md)),而不是散在每个 handler 里。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run
@@ -508,7 +508,7 @@ let (mut sender, conn) = hyper::client::conn::http1::handshake(stream).await?;
 
 **`response.collect().await.to_bytes()`** —— `http_body_util::BodyExt` 提供,把流式 body 收集成 `Bytes`。[第 21 章](21-testing.md)、[第 48 章](48-versioning.md)测试里用的是同一个方法。
 
-**验证**:
+**跑起来看**:
 
 ```bash
 cargo run

@@ -368,28 +368,6 @@ curl -X POST http://127.0.0.1:3000/ -d 'hello world'
 
 改回 `Body::from(bytes)`。
 
-### 缓冲整个 body 的代价
-
-这个手法有个明确的适用边界,官方示例的注释直接写了:`this won't work if the body is a long-running stream`。
-
-**代价是内存。** `collect()` 会把整个 body 读进内存才返回。客户端上传 1GB 文件,你的进程就吃掉 1GB。更糟的是并发场景:100 个并发上传,内存瞬间到 100GB,进程被 OOM killer 干掉。
-
-**这是一个可被利用的攻击面。** 攻击者只要并发发送大量超大请求体,就能耗尽服务器内存。所以生产环境必须限制请求体大小。axum 的 `Json`、`Form`、`Bytes` 等内置提取器**默认有 2MB 上限**(由 `DefaultBodyLimit` 控制),超过直接返回 `413 Payload Too Large`。但注意:**本章中间件里的 `body.collect()` 绕过了这个限制**——它直接操作原始 body,不经过提取器。
-
-所以真实项目里,消耗 body 的中间件应该显式限制大小,或者用 `tower-http` 的 `RequestBodyLimitLayer` 在更外层拦住——**它作用于整条处理链,不管下游用不用提取器,正好堵住这个洞**。用法和它与 `DefaultBodyLimit` 的分工见[第 13 章](13-multipart-form.md#两层请求体限制)。
-
-什么时候**不该**缓冲整个 body:
-
-- 文件上传 —— 应该边收边写磁盘,见[第 40 章](40-stream-to-file.md) stream-to-file
-- 大文件代理转发 —— 应该流式转发,见第 42、43 章
-- 长连接流式协议 —— WebSocket、SSE 根本不该走这条路
-
-什么时候可以放心缓冲:
-
-- JSON API 请求(通常几 KB)
-- 表单提交(不含文件)
-- 需要完整内容才能处理的场景,比如验签(签名覆盖整个 body,不看完算不出来)
-
 ## 完整代码
 
 `src/main.rs`:
@@ -481,6 +459,28 @@ where
     }
 }
 ```
+
+## 缓冲整个 body 的代价
+
+这个手法有个明确的适用边界,官方示例的注释直接写了:`this won't work if the body is a long-running stream`。
+
+**代价是内存。** `collect()` 会把整个 body 读进内存才返回。客户端上传 1GB 文件,你的进程就吃掉 1GB。更糟的是并发场景:100 个并发上传,内存瞬间到 100GB,进程被 OOM killer 干掉。
+
+**这是一个可被利用的攻击面。** 攻击者只要并发发送大量超大请求体,就能耗尽服务器内存。所以生产环境必须限制请求体大小。axum 的 `Json`、`Form`、`Bytes` 等内置提取器**默认有 2MB 上限**(由 `DefaultBodyLimit` 控制),超过直接返回 `413 Payload Too Large`。但注意:**本章中间件里的 `body.collect()` 绕过了这个限制**——它直接操作原始 body,不经过提取器。
+
+所以真实项目里,消耗 body 的中间件应该显式限制大小,或者用 `tower-http` 的 `RequestBodyLimitLayer` 在更外层拦住——**它作用于整条处理链,不管下游用不用提取器,正好堵住这个洞**。用法和它与 `DefaultBodyLimit` 的分工见[第 13 章](13-multipart-form.md#两层请求体限制)。
+
+什么时候**不该**缓冲整个 body:
+
+- 文件上传 —— 应该边收边写磁盘,见[第 40 章](40-stream-to-file.md) stream-to-file
+- 大文件代理转发 —— 应该流式转发,见第 42、43 章
+- 长连接流式协议 —— WebSocket、SSE 根本不该走这条路
+
+什么时候可以放心缓冲:
+
+- JSON API 请求(通常几 KB)
+- 表单提交(不含文件)
+- 需要完整内容才能处理的场景,比如验签(签名覆盖整个 body,不看完算不出来)
 
 ## 动手练习
 
